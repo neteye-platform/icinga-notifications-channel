@@ -1,4 +1,8 @@
-use jsonrpc_rs::{jsonrpc, server::ServerBuilder, tokio::BuilderTokioServerExt};
+use jsonrpc_rs::{
+    jsonrpc,
+    server::ServerBuilder,
+    tokio::{BuilderTokioServerExt, TokioServer},
+};
 
 struct ManagedState {
     state: (String, i32),
@@ -6,7 +10,7 @@ struct ManagedState {
 
 fn main() {
     let codec = tokio_util::codec::LinesCodec::new();
-    let server = ServerBuilder::new()
+    let server: TokioServer<_, String, _, _, _> = ServerBuilder::new()
         .manage(ManagedState {
             state: ("hello".to_string(), 5),
         })

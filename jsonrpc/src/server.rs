@@ -225,7 +225,10 @@ impl ServerBuilder {
         self
     }
 
-    pub fn build<Source: Stream<Item = String> + Unpin>(self, source: Source) -> Server<Source> {
+    pub fn build<I: Into<Vec<u8>>, Source: Stream<Item = I> + Unpin>(
+        self,
+        source: Source,
+    ) -> Server<Source> {
         let dispatcher = Dispatcher {
             registered_methods: self.registered_methods,
             source: source,
@@ -278,9 +281,9 @@ impl Future for JsonRpcMethodCallInner {
 impl<Source> Dispatcher<Source> {
     fn process_single(
         &self,
-        next: &str,
+        next: &[u8],
     ) -> Option<Result<JsonRpcMethodCallInner, JsonRpcResponseSingle>> {
-        let request = match serde_json::from_str::<JsonRpcRequest>(&next) {
+        let request = match serde_json::from_slice::<JsonRpcRequest>(&next) {
             Ok(request) => request,
             Err(error) => return Some(Err(parse_error(error))),
         };
@@ -301,8 +304,8 @@ impl<Source> Dispatcher<Source> {
         }
     }
 
-    fn process_batch(&self, next: &str) -> Result<JsonRpcMethodCallInner, JsonRpcResponseSingle> {
-        let requests = match serde_json::from_str::<Vec<&RawValue>>(next) {
+    fn process_batch(&self, next: &[u8]) -> Result<JsonRpcMethodCallInner, JsonRpcResponseSingle> {
+        let requests = match serde_json::from_slice::<Vec<&RawValue>>(next) {
             Ok(request) => request,
             Err(error) => return Err(parse_error(error)),
         };
@@ -367,7 +370,7 @@ impl<Source> Dispatcher<Source> {
     }
 }
 
-impl<Source: Stream<Item = String> + Unpin> Stream for Dispatcher<Source> {
+impl<I: Into<Vec<u8>>, Source: Stream<Item = I> + Unpin> Stream for Dispatcher<Source> {
     type Item = Result<JsonRpcMethodCallInner, JsonRpcResponseSingle>;
 
     fn poll_next(
@@ -380,7 +383,8 @@ impl<Source: Stream<Item = String> + Unpin> Stream for Dispatcher<Source> {
         };
 
         // ToDo: Consider using serde_path_to_error here.
-        if next.starts_with("[") {
+        let next = next.into();
+        if next.starts_with(b"[") {
             Poll::Ready(Some(self.process_batch(&next)))
         } else {
             match self.process_single(&next) {
@@ -447,7 +451,7 @@ pub struct Server<Source> {
     running_futures: FuturesUnordered<JsonRpcMethodCallInner>,
 }
 
-impl<Source: Stream<Item = String> + Unpin> Stream for Server<Source> {
+impl<I: Into<Vec<u8>>, Source: Stream<Item = I> + Unpin> Stream for Server<Source> {
     type Item = JsonRpcResponse;
 
     fn poll_next(

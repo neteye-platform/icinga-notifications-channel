@@ -46,24 +46,28 @@ use crate::server::{JsonRpcResponse, Server, ServerBuilder};
 ///
 /// The future resolves to `Ok(())` when the underlying stream ends or to an
 /// error if the codec writer encounters one.
-pub struct TokioServer<C, R, W>(
+pub struct TokioServer<I, O, C, R, W>(
     Forward<
-        TryStreamAdapter<<C as Encoder<String>>::Error, Server<CodecCompatRead<R, C>>>,
-        CodecCompatWrite<W, C>,
+        TryStreamAdapter<<C as Encoder<O>>::Error, Server<CodecCompatRead<R, C>>>,
+        CodecCompatWrite<O, W, C>,
     >,
 )
 where
-    C: Decoder<Item = String> + Encoder<String> + Clone,
+    I: Into<Vec<u8>>,
+    O: From<String>,
+    C: Decoder<Item = I> + Encoder<O> + Clone,
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin;
 
-impl<C, R, W> Future for TokioServer<C, R, W>
+impl<I, O, C, R, W> Future for TokioServer<I, O, C, R, W>
 where
-    C: Decoder<Item = String> + Encoder<String> + Clone,
+    I: Into<Vec<u8>>,
+    O: From<String>,
+    C: Decoder<Item = I> + Encoder<O> + Clone,
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    type Output = Result<(), <C as Encoder<String>>::Error>;
+    type Output = Result<(), <C as Encoder<O>>::Error>;
 
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
@@ -87,27 +91,31 @@ pub trait BuilderTokioServerExt {
     ///
     /// Each decoded frame must be valid UTF-8 JSON (single request or batch).
     /// Responses are serialized with `serde_json::to_string` and passed to the codec encoder.
-    fn build_with_codec<Codec, Read, Write>(
+    fn build_with_codec<I, O, Codec, Read, Write>(
         self,
         codec: Codec,
         read: Read,
         write: Write,
-    ) -> TokioServer<Codec, Read, Write>
+    ) -> TokioServer<I, O, Codec, Read, Write>
     where
-        Codec: Encoder<String> + Decoder<Item = String> + Clone,
+        I: Into<Vec<u8>>,
+        O: From<String>,
+        Codec: Encoder<O> + Decoder<Item = I> + Clone,
         Read: AsyncRead + Unpin,
         Write: AsyncWrite + Unpin;
 }
 
 impl BuilderTokioServerExt for ServerBuilder {
-    fn build_with_codec<Codec, Read, Write>(
+    fn build_with_codec<I, O, Codec, Read, Write>(
         self,
         codec: Codec,
         read: Read,
         write: Write,
-    ) -> TokioServer<Codec, Read, Write>
+    ) -> TokioServer<I, O, Codec, Read, Write>
     where
-        Codec: Encoder<String> + Decoder<Item = String> + Clone,
+        I: Into<Vec<u8>>,
+        O: From<String>,
+        Codec: Encoder<O> + Decoder<Item = I> + Clone,
         Read: AsyncRead + Unpin,
         Write: AsyncWrite + Unpin,
     {
@@ -115,7 +123,7 @@ impl BuilderTokioServerExt for ServerBuilder {
         let writer = FramedWrite::new(write, codec);
 
         let server = TryStreamAdapter(self.build(CodecCompatRead(reader)), PhantomData)
-            .forward(CodecCompatWrite(writer));
+            .forward(CodecCompatWrite(writer, PhantomData));
 
         TokioServer(server)
     }
@@ -123,8 +131,10 @@ impl BuilderTokioServerExt for ServerBuilder {
 
 struct CodecCompatRead<S, D>(FramedRead<S, D>);
 
-impl<S: AsyncRead + Unpin, D: Decoder<Item = String>> Stream for CodecCompatRead<S, D> {
-    type Item = String;
+impl<I: Into<Vec<u8>>, S: AsyncRead + Unpin, D: Decoder<Item = I>> Stream
+    for CodecCompatRead<S, D>
+{
+    type Item = I;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -140,12 +150,13 @@ impl<S: AsyncRead + Unpin, D: Decoder<Item = String>> Stream for CodecCompatRead
     }
 }
 
-struct CodecCompatWrite<S, E>(FramedWrite<S, E>);
+struct CodecCompatWrite<O, S, E: Encoder<O>>(FramedWrite<S, E>, PhantomData<O>);
 
-impl<T, E> Sink<JsonRpcResponse> for CodecCompatWrite<T, E>
+impl<O, T, E> Sink<JsonRpcResponse> for CodecCompatWrite<O, T, E>
 where
+    O: From<String>,
     T: AsyncWrite + Unpin,
-    E: Encoder<String>,
+    E: Encoder<O>,
     E::Error: From<io::Error>,
 {
     type Error = E::Error;
@@ -164,7 +175,7 @@ where
     ) -> Result<(), Self::Error> {
         let result = serde_json::to_string(&item).unwrap();
         let pin = pin!(&mut self.0);
-        pin.start_send(result)
+        pin.start_send(result.into())
     }
 
     fn poll_flush(
@@ -183,6 +194,8 @@ where
         fut.poll_close(cx)
     }
 }
+
+impl<O, S, E: Encoder<O>> Unpin for CodecCompatWrite<O, S, E> {}
 
 struct TryStreamAdapter<E, S>(S, PhantomData<E>);
 
