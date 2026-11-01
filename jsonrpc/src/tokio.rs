@@ -222,13 +222,41 @@ impl<E, S: Stream + Unpin> Stream for TryStreamAdapter<E, S> {
 
 impl<E, S> Unpin for TryStreamAdapter<E, S> {}
 
+/// Wraps a JSON-RPC method future in a Tokio task for parallel execution.
+///
+/// This helper can be passed to `ServerBuilder::map_requests(&tokio_parallel)`
+/// to offload each method future onto the Tokio runtime. It preserves the
+/// original future's output. If the spawned task panics or is cancelled, an
+/// `Internal error` (-32603) response is generated to avoid silently dropping
+/// the request.
+///
+/// # Example
+/// ```rust
+/// use jsonrpc_rs::{jsonrpc, server::ServerBuilder, tokio::BuilderTokioServerExt};
+/// use jsonrpc_rs::tokio::tokio_parallel;
+///
+/// #[jsonrpc] async fn add(a: i32, b: i32) -> i32 { a + b }
+///
+/// fn main() {
+///     let codec = tokio_util::codec::LinesCodec::new();
+///     let server = ServerBuilder::new()
+///         .register_named(add)
+///         .map_requests(&tokio_parallel)
+///         .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
+///     // drive the server on a runtime ...
+/// }
+/// ```
+///
+/// # Errors
+/// Returns an `Internal error` (-32603) JSON-RPC response if the spawned task
+/// fails to join (panic or cancellation).
 pub fn tokio_parallel(input: Pin<JsonRpcMethodCall>) -> Pin<JsonRpcMethodCall> {
     Box::pin(async move {
         match tokio::task::spawn(input).await {
             Ok(result) => result,
             Err(_) => JsonRpcResponse::Single(JsonRpcResponseSingle::new(JsonRpcResult::Err {
                 code: JsonRpcErrorCode::internal_error(),
-                message: "Internal server errror".to_string(),
+                message: "Internal server error".to_string(),
                 data: None,
             })),
         }
