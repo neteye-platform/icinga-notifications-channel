@@ -42,6 +42,39 @@ pub trait Channel: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Option<DeliveryResult>, ChannelError>> + Send;
 }
 
+/// Fails a test unless every label and help of `C` exists in `locale`.
+///
+/// Missing translations are not a compile error, since only `en_US` is
+/// required. Call this in a test to keep a locale complete:
+///
+/// ```ignore
+/// #[test]
+/// fn german_is_complete() {
+///     icinga_notifications_channel::channel::assert_complete_locale::<Config>("de_DE");
+/// }
+/// ```
+///
+/// A help is only expected where `en_US` has one. Choices of select options
+/// are not localized by Icinga Notifications and are not checked.
+///
+/// # Panics
+///
+/// Lists every missing text, or an invalid `locale`.
+pub fn assert_complete_locale<C: ChannelConfig>(locale: &str) {
+    if let Err(e) = crate::config::Locale::new(locale) {
+        panic!("{e}");
+    }
+    let missing: Vec<String> = C::config_attrs()
+        .iter()
+        .flat_map(|option| option.missing_translations(locale))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "the locale {locale} is incomplete:\n  {}",
+        missing.join("\n  ")
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

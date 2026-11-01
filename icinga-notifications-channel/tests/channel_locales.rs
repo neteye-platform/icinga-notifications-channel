@@ -40,3 +40,20 @@ fn labels_help_and_options_come_from_the_locale_files() {
 fn compile_errors() {
     trybuild::TestCases::new().compile_fail("tests/ui/locales_*.rs");
 }
+
+#[test]
+fn complete_locale_passes() {
+    icinga_notifications_channel::channel::assert_complete_locale::<Translated>("en_US");
+}
+
+#[test]
+#[should_panic(expected = "the locale de_DE is incomplete:\n  option `retries`: label")]
+fn incomplete_locale_lists_what_is_missing() {
+    icinga_notifications_channel::channel::assert_complete_locale::<Translated>("de_DE");
+}
+
+#[test]
+#[should_panic(expected = "invalid locale")]
+fn invalid_locale_is_rejected() {
+    icinga_notifications_channel::channel::assert_complete_locale::<Translated>("de-DE");
+}

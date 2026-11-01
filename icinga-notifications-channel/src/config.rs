@@ -93,6 +93,10 @@ impl Localized {
         }
     }
 
+    fn has(&self, locale: &str) -> bool {
+        self.0.keys().any(|l| l.as_str() == locale)
+    }
+
     /// Adds or replaces the text of `locale`.
     pub fn with(
         mut self,
@@ -210,7 +214,35 @@ impl ChildOption {
     }
 }
 
+impl Common {
+    /// Appends what `locale` still lacks: a label, and a help if `en_US` has one.
+    fn missing(&self, locale: &str, missing: &mut Vec<String>) {
+        if !self.label.has(locale) {
+            missing.push(format!("option `{}`: label", self.name));
+        }
+        if self
+            .help
+            .as_ref()
+            .is_some_and(|h| h.has(Locale::EN_US) && !h.has(locale))
+        {
+            missing.push(format!("option `{}`: help", self.name));
+        }
+    }
+}
+
 impl ConfigOption {
+    /// The texts `locale` lacks, one entry per missing label or help.
+    ///
+    /// A help is only expected when `en_US` has one.
+    pub fn missing_translations(&self, locale: &str) -> Vec<String> {
+        let mut missing = Vec::new();
+        self.common.missing(locale, &mut missing);
+        for child in &self.children {
+            child.common.missing(locale, &mut missing);
+        }
+        missing
+    }
+
     /// A new option with the given form element and label.
     pub fn new(name: impl Into<String>, kind: ConfigType, label: Localized) -> Self {
         Self {
