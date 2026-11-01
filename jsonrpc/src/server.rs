@@ -18,6 +18,10 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json, value::RawValue};
 
 #[derive(Deserialize)]
+/// Deserialized JSON-RPC 2.0 request object (single element of an incoming payload).
+///
+/// Raw `params` are retained for deferred / typed deserialization (`parse_params`).
+/// An absent `id` denotes a notification (no response will be emitted).
 pub struct JsonRpcRequest<'request> {
     #[allow(dead_code)]
     jsonrpc: MustBe!("2.0"),
@@ -39,6 +43,9 @@ impl JsonRpcRequest<'_> {
 }
 
 #[derive(Serialize)]
+/// Result of executing a JSON-RPC method:
+/// * `Ok`  → serialized as `"result": <value>`
+/// * `Err` → serialized as `"error": { code, message, data? }`
 pub enum JsonRpcResult {
     #[serde(rename = "result")]
     Ok(Box<dyn DynSerialize + Send>),
@@ -52,6 +59,9 @@ pub enum JsonRpcResult {
 }
 
 #[derive(Serialize)]
+/// A single JSON-RPC 2.0 response object (`{"jsonrpc":"2.0", ... , "id": <id>}`).
+///
+/// Contains either a `result` or an `error` (modeled by [`JsonRpcResult`]).
 pub struct JsonRpcResponseSingle {
     jsonrpc: MustBe!("2.0"),
     #[serde(flatten)]
@@ -61,9 +71,13 @@ pub struct JsonRpcResponseSingle {
 
 #[derive(Serialize)]
 #[serde(untagged)]
+/// Top-level response wrapper: either a single response object or a batch
+/// (vector) of response objects, as per JSON-RPC 2.0 batch semantics.
+///
+/// Notifications are filtered out upstream and never appear here.
 pub enum JsonRpcResponse {
     Single(JsonRpcResponseSingle),
-    Bulk(Vec<JsonRpcResponseSingle>),
+    Batch(Vec<JsonRpcResponseSingle>),
 }
 
 impl JsonRpcResponseSingle {
@@ -83,6 +97,15 @@ impl From<JsonRpcResponseSingle> for JsonRpcResponse {
 }
 
 #[derive(Serialize)]
+/// Wrapper for JSON-RPC error codes (standard and custom).
+///
+/// Helpers implement the canonical codes:
+/// * `parse_error()`  → -32700
+/// * `invalid_request()` → -32600
+/// * `method_not_found()` → -32601
+/// * `invalid_params()` → -32602
+/// * `internal_error()` → -32603
+/// * `server_error(code)` / `custom_error(code)` for application-defined ranges.
 pub struct JsonRpcErrorCode(i32);
 
 impl JsonRpcErrorCode {
@@ -119,13 +142,22 @@ impl JsonRpcErrorCode {
     }
 }
 
+/// Boxed future produced by a registered JSON-RPC method. Resolves to either a
+/// single or batch response (`JsonRpcResponse`).
 pub type JsonRpcMethodCall = Box<dyn Future<Output = JsonRpcResponse> + 'static + Send>;
+/// Low-level handler function signature invoked for a request.
+/// Receives the shared [`ServerState`] and a borrowed [`JsonRpcRequest`].
+/// Returns either:
+/// * `Ok(JsonRpcMethodCall)` – an async future producing a response
+/// * `Err(JsonRpcResponseSingle)` – an immediate error response
 pub type JsonRpcMethod =
     &'static dyn for<'server, 'request> Fn(
         &'server ServerState,
         &'request JsonRpcRequest<'request>,
     ) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle>;
 
+/// Pairing of a static method name and its dispatch function, usually produced
+/// by the `#[jsonrpc]` macro or constructed manually with [`JsonRpcNamedMethod::new`].
 pub struct JsonRpcNamedMethod {
     name: &'static str,
     method: JsonRpcMethod,
@@ -138,6 +170,15 @@ impl JsonRpcNamedMethod {
 }
 
 #[derive(Clone)]
+/// Builder for configuring and constructing a JSON-RPC server.
+///
+/// Methods allow:
+/// * Registering methods (`register`, `register_named`)
+/// * Injecting managed state (`manage`)
+/// * Limiting concurrency (`max_parallel_requests`)
+/// * Mapping / wrapping request futures (`map_requests`)
+/// * Producing either a generic `Server` (`build`) or, with the tokio feature,
+///   a codec-based server future (`build_with_codec` via the `tokio` module).
 pub struct ServerBuilder {
     registered_methods: HashMap<String, JsonRpcMethod>,
     managed_state: ServerState,
@@ -224,11 +265,11 @@ impl Future for JsonRpcMethodCallInner {
                 single_response.id = id;
                 Poll::Ready(Some(JsonRpcResponse::Single(single_response)))
             }
-            JsonRpcResponse::Bulk(bulk) => {
+            JsonRpcResponse::Batch(bulk) => {
                 if bulk.is_empty() {
                     return Poll::Ready(None);
                 }
-                Poll::Ready(Some(JsonRpcResponse::Bulk(bulk)))
+                Poll::Ready(Some(JsonRpcResponse::Batch(bulk)))
             }
         }
     }
@@ -308,7 +349,7 @@ impl<Source> Dispatcher<Source> {
                     results.push(response);
                 }
             }
-            JsonRpcResponse::Bulk(results)
+            JsonRpcResponse::Batch(results)
         });
 
         Ok(JsonRpcMethodCallInner {
@@ -355,6 +396,9 @@ impl<Source: Stream<Item = String> + Unpin> Stream for Dispatcher<Source> {
 }
 
 #[derive(Clone)]
+/// Internal container holding user managed state values registered via
+/// [`ServerBuilder::manage`]. State is stored type-erased and can be retrieved
+/// as an `Arc<RwLock<T>>` using [`ServerState::get_arc_lock`].
 pub struct ServerState {
     managed_state: Vec<Arc<dyn Any + Send + Sync + 'static>>,
 }
@@ -388,6 +432,12 @@ impl ServerState {
     }
 }
 
+/// A running JSON-RPC server over an abstract `Stream<Item = String>`.
+///
+/// Implements `Stream<Item = JsonRpcResponse>`; drive it (e.g. with `.next().await`)
+/// or, when using the Tokio extension, let the provided future run to completion.
+/// Responses are produced as requests (and batches) are processed. Notifications
+/// (requests without an `id`) do not yield output items.
 pub struct Server<Source> {
     // We will continue to poll the source while we are finishing the requests, so -
     source: Fuse<Dispatcher<Source>>,
@@ -462,6 +512,11 @@ impl<Source: Stream<Item = String> + Unpin> Stream for Server<Source> {
     }
 }
 
+/// Deserialize the params section of a [`JsonRpcRequest`] into a concrete type `T`.
+///
+/// On success returns `T`. On failure returns a ready-made `JsonRpcResponseSingle`
+/// representing either `Parse error` (-32700) or `Invalid Request` (-32600),
+/// following the JSON-RPC 2.0 specification.
 pub fn parse_params<T: DeserializeOwned>(req: &JsonRpcRequest) -> Result<T, JsonRpcResponseSingle> {
     // ToDo: Consider using serde_path_to_error here.
     serde_json::from_str(req.param_str()).map_err(parse_error)

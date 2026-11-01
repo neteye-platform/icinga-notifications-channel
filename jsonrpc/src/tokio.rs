@@ -1,3 +1,32 @@
+//! Tokio integration: turn a `ServerBuilder` plus any `AsyncRead` / `AsyncWrite` pair and
+//! a `tokio_util::codec` into a runnable `Future` driving request/response flow.
+//!
+//! This module is enabled via the `tokio_util` feature. It frames incoming JSON-RPC
+//! messages as `String`s (one per decoded frame) and forwards serialized responses
+//! using the provided codec. Typical usage leverages `LinesCodec`, but any codec
+//! implementing `Decoder<Item = String>` and `Encoder<String>` works.
+//!
+//! Example:
+//!
+//! ```no_run
+//! use jsonrpc_rs::{jsonrpc, server::ServerBuilder, tokio::BuilderTokioServerExt};
+//!
+//! #[jsonrpc] async fn add(a: i64, b: i64) -> i64 { a + b }
+//!
+//! fn main() {
+//!     let codec = tokio_util::codec::LinesCodec::new();
+//!     let server = ServerBuilder::new()
+//!         .register_named(add)
+//!         .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
+//!
+//!     tokio::runtime::Builder::new_current_thread()
+//!         .build().unwrap()
+//!         .block_on(server).unwrap();
+//! }
+//! ```
+//!
+//! Each inbound frame must be a complete JSON-RPC request (single or batch). Outbound
+//! responses are serialized as a single line/frame.
 use std::{io, marker::PhantomData, pin::pin, task::Poll};
 
 use futures_util::{Sink, Stream, StreamExt, ready, stream::Forward};
@@ -6,6 +35,17 @@ use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 
 use crate::server::{JsonRpcResponse, Server, ServerBuilder};
 
+/// A `Future` (and internal stream forwarder) that drives a JSON-RPC server
+/// over an `AsyncRead`/`AsyncWrite` pair using a user-supplied codec.
+///
+/// Created via [`BuilderTokioServerExt::build_with_codec`]. Polling / awaiting
+/// this future will:
+/// * Decode incoming frames into `String` JSON payloads.
+/// * Feed them into the core `Server`.
+/// * Encode `JsonRpcResponse` values back onto the writer.
+///
+/// The future resolves to `Ok(())` when the underlying stream ends or to an
+/// error if the codec writer encounters one.
 pub struct TokioServer<C, R, W>(
     Forward<
         TryStreamAdapter<<C as Encoder<String>>::Error, Server<CodecCompatRead<R, C>>>,
@@ -34,7 +74,19 @@ where
     }
 }
 
+/// Extension trait adding a Tokio / codec based constructor to `ServerBuilder`.
+///
+/// This consumes the builder and returns a [`TokioServer`] future that can be
+/// `.await`ed directly. The codec must produce `String` items (decoded JSON
+/// requests) and accept `String` for encoded responses.
+///
+/// See module-level docs for a full example.
 pub trait BuilderTokioServerExt {
+    /// Finalize the `ServerBuilder` into a [`TokioServer`] using the provided `codec`,
+    /// `read` (implementing `AsyncRead + Unpin`) and `write` (implementing `AsyncWrite + Unpin`).
+    ///
+    /// Each decoded frame must be valid UTF-8 JSON (single request or batch).
+    /// Responses are serialized with `serde_json::to_string` and passed to the codec encoder.
     fn build_with_codec<Codec, Read, Write>(
         self,
         codec: Codec,
