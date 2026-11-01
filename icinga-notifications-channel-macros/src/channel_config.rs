@@ -1,8 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::{
-    Data, DeriveInput, Error, Expr, Field, Fields, GenericArgument, Ident, PathArguments, Type,
-    spanned::Spanned,
+    Data, DeriveInput, Error, Expr, ExprArray, ExprLit, Field, Fields, GenericArgument, Ident, Lit,
+    LitStr, PathArguments, Type, spanned::Spanned,
 };
 
 use crate::serde_attrs::{self, Container, Default};
@@ -14,6 +14,10 @@ struct FieldAttrs {
     secret: bool,
     min: Option<Expr>,
     max: Option<Expr>,
+    /// `parent = "field"`: the field whose value decides if this one shows.
+    parent: Option<LitStr>,
+    /// `when = [...]`: the parent values this one shows for.
+    when: Option<ExprArray>,
 }
 
 fn field_attrs(field: &Field) -> syn::Result<FieldAttrs> {
@@ -28,11 +32,29 @@ fn field_attrs(field: &Field) -> syn::Result<FieldAttrs> {
                 attrs.min = Some(meta.value()?.parse()?);
             } else if meta.path.is_ident("max") {
                 attrs.max = Some(meta.value()?.parse()?);
+            } else if meta.path.is_ident("parent") {
+                attrs.parent = Some(meta.value()?.parse()?);
+            } else if meta.path.is_ident("when") {
+                attrs.when = Some(meta.value()?.parse()?);
             } else {
-                return Err(meta.error("unknown option, expected text, secret, min or max"));
+                return Err(
+                    meta.error("unknown option, expected text, secret, min, max, parent or when")
+                );
             }
             Ok(())
         })?;
+    }
+    match (&attrs.parent, &attrs.when) {
+        (Some(_), None) => {
+            return Err(Error::new_spanned(
+                field,
+                "`parent` requires `when = [...]`",
+            ));
+        }
+        (None, Some(when)) => {
+            return Err(Error::new_spanned(when, "`when` requires `parent`"));
+        }
+        _ => {}
     }
     Ok(attrs)
 }
@@ -97,7 +119,8 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let krate = quote!(::icinga_notifications_channel);
 
-    let mut options = Vec::new();
+    // (rust field name, parent, option builder)
+    let mut items: Vec<Item> = Vec::new();
     for field in &fields.named {
         let serde = serde_attrs::field(&field.attrs)?;
         if let Some(span) = serde.flatten {
@@ -169,8 +192,23 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                     .expect("checked above");
             }
         });
-        options.push(quote!({ #checks #build option }));
+        let parent = match (&attrs.parent, &attrs.when) {
+            (Some(parent), Some(when)) => Some(Parent {
+                field: parent.clone(),
+                when: when.clone(),
+            }),
+            _ => None,
+        };
+        items.push(Item {
+            field: field_ident.unraw().to_string(),
+            ty: ty.clone(),
+            checks,
+            build,
+            parent,
+            children: Vec::new(),
+        });
     }
+    let options = attach_children(items, &krate)?;
     Ok(quote! {
         impl #krate::channel::ChannelConfig for #ident {
             fn config_attrs() -> ::std::vec::Vec<#krate::config::ConfigOption> {
@@ -204,4 +242,131 @@ fn type_checks(ty: &Type, attrs: &FieldAttrs, krate: &TokenStream) -> syn::Resul
         require(quote!(Number), "`min` and `max` require a number");
     }
     Ok(checks)
+}
+
+struct Parent {
+    field: LitStr,
+    when: ExprArray,
+}
+
+struct Item {
+    field: String,
+    /// The field type without `Option`.
+    ty: Type,
+    checks: TokenStream,
+    build: TokenStream,
+    parent: Option<Parent>,
+    /// Builders of the child options, already wrapped in `ChildOption`.
+    children: Vec<TokenStream>,
+}
+
+/// Moves every child under its parent and returns the top level builders.
+fn attach_children(mut items: Vec<Item>, krate: &TokenStream) -> syn::Result<Vec<TokenStream>> {
+    for child in 0..items.len() {
+        let Some(parent) = items[child].parent.take() else {
+            continue;
+        };
+        let Some(index) = items.iter().position(|i| parent.field.value() == i.field) else {
+            return Err(Error::new_spanned(
+                &parent.field,
+                format!("`{}` is not a field of this struct", parent.field.value()),
+            ));
+        };
+        if items[index].parent.is_some() || items[index].field == items[child].field {
+            return Err(Error::new_spanned(
+                &parent.field,
+                "a child cannot be a parent, nor its own parent",
+            ));
+        }
+        let parent_ty = items[index].ty.clone();
+        let values = parent
+            .when
+            .elems
+            .iter()
+            .map(|value| parent_value(value, &parent_ty, krate))
+            .collect::<syn::Result<Vec<_>>>()?;
+        let checks = values.iter().map(|(_, check)| check);
+        let values = values.iter().map(|(value, _)| value);
+        let Item {
+            checks: child_checks,
+            build,
+            ..
+        } = &items[child];
+        let tokens = quote! {
+            {
+                #(#checks)*
+                #child_checks
+                #build
+                #krate::config::ChildOption::new(option, [#(#values),*])
+                    .expect("children cannot have children, checked at compile time")
+            }
+        };
+        items[index].children.push(tokens);
+        // Placeholder so indexes stay valid; removed below.
+        items[child].parent = Some(parent);
+    }
+    Ok(items
+        .into_iter()
+        .filter(|item| item.parent.is_none())
+        .map(|item| {
+            let Item {
+                checks,
+                build,
+                children,
+                ..
+            } = item;
+            quote!({
+                #checks
+                #build
+                #(option = option.child(#children);)*
+                option
+            })
+        })
+        .collect())
+}
+
+/// The JSON value of a `when` entry and a compile-time check that the
+/// parent can have it.
+fn parent_value(
+    value: &Expr,
+    parent_ty: &Type,
+    krate: &TokenStream,
+) -> syn::Result<(TokenStream, TokenStream)> {
+    let span = value.span();
+    match value {
+        Expr::Lit(ExprLit {
+            lit: Lit::Str(choice),
+            ..
+        }) => Ok((
+            quote!(#krate::__private::Value::from(#choice)),
+            quote_spanned! {span=>
+                const _: () = assert!(
+                    #krate::__private::contains(
+                        <#parent_ty as #krate::config::FieldType>::CHOICES,
+                        #choice,
+                    ),
+                    "the parent has no such option value",
+                );
+            },
+        )),
+        Expr::Lit(ExprLit {
+            lit: Lit::Bool(flag),
+            ..
+        }) => Ok((
+            quote!(#krate::__private::Value::from(#flag)),
+            quote_spanned! {span=>
+                const _: () = assert!(
+                    matches!(
+                        <#parent_ty as #krate::config::FieldType>::KIND,
+                        #krate::config::ConfigType::Bool
+                    ),
+                    "true and false require a bool parent",
+                );
+            },
+        )),
+        _ => Err(Error::new_spanned(
+            value,
+            "expected a string literal (select option) or true/false (checkbox)",
+        )),
+    }
 }

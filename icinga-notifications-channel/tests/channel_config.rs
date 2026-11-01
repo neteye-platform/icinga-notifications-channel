@@ -90,3 +90,31 @@ fn struct_default_is_used_per_field() {
 fn compile_errors() {
     trybuild::TestCases::new().compile_fail("tests/ui/channel_config_*.rs");
 }
+
+#[derive(Deserialize, icinga_notifications_channel::ChannelConfig)]
+struct WithChildren {
+    method: Method,
+    #[config(parent = "method", when = ["post"])]
+    body: Option<String>,
+    #[serde(default)]
+    auth: bool,
+    #[config(parent = "auth", when = [true])]
+    user: Option<String>,
+}
+
+#[test]
+fn children_are_nested_under_their_parent() {
+    let attrs = serde_json::to_value(WithChildren::config_attrs()).unwrap();
+    let attrs = attrs.as_array().unwrap();
+    assert_eq!(attrs.len(), 2);
+    assert_eq!(attrs[0]["name"], "method");
+    assert_eq!(
+        attrs[0]["children"],
+        json!([{
+            "name": "body", "type": "string", "label": { "en_US": "body" },
+            "parent_values": ["post"], "min": null, "max": null
+        }])
+    );
+    assert_eq!(attrs[1]["children"][0]["name"], "user");
+    assert_eq!(attrs[1]["children"][0]["parent_values"], json!([true]));
+}

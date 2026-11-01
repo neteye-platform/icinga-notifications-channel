@@ -22,7 +22,26 @@ pub use icinga_notifications_channel_macros::{ChannelConfig, ConfigEnum};
 #[doc(hidden)]
 pub mod __private {
     use serde::Serialize;
-    use serde_json::Value;
+    pub use serde_json::Value;
+
+    /// Whether `choices` contains `value`, usable in constants.
+    pub const fn contains(choices: &[&str], value: &str) -> bool {
+        let mut i = 0;
+        while i < choices.len() {
+            if choices[i].len() == value.len() {
+                let (a, b) = (choices[i].as_bytes(), value.as_bytes());
+                let mut j = 0;
+                while j < a.len() && a[j] == b[j] {
+                    j += 1;
+                }
+                if j == a.len() {
+                    return true;
+                }
+            }
+            i += 1;
+        }
+        false
+    }
 
     /// A default as the string or bool `GetInfo` expects.
     pub fn default_value(default: &impl Serialize) -> Value {

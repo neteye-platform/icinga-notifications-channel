@@ -1,0 +1,5 @@
+error: `nope` is not a field of this struct
+  --> tests/ui/channel_config_unknown_parent.rs:11:23
+   |
+11 |     #[config(parent = "nope", when = ["A"])]
+   |                       ^^^^^^

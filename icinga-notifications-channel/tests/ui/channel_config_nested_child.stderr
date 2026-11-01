@@ -1,0 +1,5 @@
+error: a child cannot be a parent, nor its own parent
+  --> tests/ui/channel_config_nested_child.rs:14:23
+   |
+14 |     #[config(parent = "mid", when = ["A"])]
+   |                       ^^^^^
