@@ -1,5 +1,5 @@
 error: ChannelConfig does not support generic structs
- --> tests/ui/channel_config_generic.rs:5:9
+ --> tests/ui/channel_config_generic.rs:6:9
   |
-5 | struct C<T> { a: T }
+6 | struct C<T> { a: T }
   |         ^^^

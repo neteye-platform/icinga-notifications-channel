@@ -1,0 +1,5 @@
+error: ../../../../icinga-notifications-channel/tests/locales/bad_unknown_key/en_US.toml: [a] unknown key `labell`, valid keys: label, help, options
+ --> tests/ui/locales_unknown_key.rs:5:20
+  |
+5 | #[config(locales = "../../../../icinga-notifications-channel/tests/locales/bad_unknown_key")]
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

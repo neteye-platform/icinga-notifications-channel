@@ -7,6 +7,7 @@ enum M {
 }
 
 #[derive(Deserialize, ChannelConfig)]
+#[config(locales = "../../../../icinga-notifications-channel/tests/locales/m_a")]
 struct C {
     m: M,
     #[config(parent = "m", when = ["B"])]

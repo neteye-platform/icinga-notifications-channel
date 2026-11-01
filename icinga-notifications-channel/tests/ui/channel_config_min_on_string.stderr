@@ -1,5 +1,5 @@
 error[E0080]: evaluation panicked: `min` and `max` require a number
- --> tests/ui/channel_config_min_on_string.rs:5:34
+ --> tests/ui/channel_config_min_on_string.rs:6:34
   |
-5 | struct C { #[config(min = 1)] a: String }
+6 | struct C { #[config(min = 1)] a: String }
   |                                  ^^^^^^ evaluation of `<C as icinga_notifications_channel::channel::ChannelConfig>::config_attrs::_` failed here

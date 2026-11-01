@@ -1,0 +1,9 @@
+[method]
+label = "Method"
+help = "HTTP method"
+
+[method.options]
+get = "GET request"
+
+[retries]
+label = "Retries"

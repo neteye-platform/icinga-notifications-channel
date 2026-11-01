@@ -1,0 +1,24 @@
+[urlTemplate]
+label = "L urlTemplate"
+
+[user]
+label = "L user"
+
+[password]
+label = "L password"
+
+[body]
+label = "L body"
+
+[retries]
+label = "L retries"
+
+[verify]
+label = "L verify"
+
+[method]
+label = "L method"
+
+[methods]
+label = "L methods"
+

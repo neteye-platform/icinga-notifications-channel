@@ -1,7 +1,7 @@
 error[E0277]: the trait bound `(u8, u8): FieldType` is not satisfied
- --> tests/ui/channel_config_unsupported_type.rs:5:15
+ --> tests/ui/channel_config_unsupported_type.rs:6:15
   |
-5 | struct C { a: (u8, u8) }
+6 | struct C { a: (u8, u8) }
   |               ^^^^^^^^ the trait `FieldType` is not implemented for `(u8, u8)`
   |
   = help: the following other types implement trait `FieldType`:

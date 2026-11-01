@@ -1,5 +1,5 @@
-error: `nope` is not a field of this struct
-  --> tests/ui/channel_config_unknown_parent.rs:11:23
+error: ../../../../icinga-notifications-channel/tests/locales/m_a/en_US.toml: unknown option `m`, valid options: a
+  --> tests/ui/channel_config_unknown_parent.rs:10:20
    |
-11 |     #[config(parent = "nope", when = ["A"])]
-   |                       ^^^^^^
+10 | #[config(locales = "../../../../icinga-notifications-channel/tests/locales/m_a")]
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

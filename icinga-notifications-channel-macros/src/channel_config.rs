@@ -5,7 +5,10 @@ use syn::{
     LitStr, PathArguments, Type, spanned::Spanned,
 };
 
-use crate::serde_attrs::{self, Container, Default};
+use crate::{
+    locales,
+    serde_attrs::{self, Container, Default},
+};
 
 /// The `#[config(...)]` attributes of a field.
 #[derive(Default)]
@@ -95,6 +98,50 @@ impl Unraw for Ident {
     }
 }
 
+/// `#[config(locales = "dir")]` on the struct.
+fn locales_dir(input: &DeriveInput) -> syn::Result<LitStr> {
+    let mut dir = None;
+    for attr in input.attrs.iter().filter(|a| a.path().is_ident("config")) {
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("locales") {
+                dir = Some(meta.value()?.parse::<LitStr>()?);
+                Ok(())
+            } else {
+                Err(meta.error("unknown option, expected locales"))
+            }
+        })?;
+    }
+    dir.ok_or_else(|| {
+        Error::new_spanned(
+            &input.ident,
+            "ChannelConfig requires `#[config(locales = \"dir\")]`, the directory of the translation files",
+        )
+    })
+}
+
+/// The texts of `files` for `name`, as a `Localized` expression.
+fn localized(
+    files: &[locales::File],
+    name: &str,
+    text: impl Fn(&locales::Entry) -> Option<&String>,
+    krate: &TokenStream,
+) -> Option<TokenStream> {
+    let pairs: Vec<_> = files
+        .iter()
+        .filter_map(|file| {
+            let text = text(file.entries.get(name)?)?;
+            let locale = &file.locale;
+            Some(quote!((#locale, #text)))
+        })
+        .collect();
+    (!pairs.is_empty()).then(|| {
+        quote! {
+            #krate::config::Localized::try_from_pairs([#(#pairs),*])
+                .expect("checked at compile time")
+        }
+    })
+}
+
 /// Expands `#[derive(ChannelConfig)]`.
 pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let Data::Struct(data) = &input.data else {
@@ -119,7 +166,23 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let krate = quote!(::icinga_notifications_channel);
 
-    // (rust field name, parent, option builder)
+    let mut names = Vec::new();
+    for field in &fields.named {
+        let serde = serde_attrs::field(&field.attrs)?;
+        if !serde.skip {
+            let field_ident = field.ident.as_ref().expect("named fields");
+            names.push(option_name(field_ident, &serde, &container));
+        }
+    }
+    let dir = locales_dir(input)?;
+    let files = locales::load(&dir, &names)?;
+    let tracked = files.iter().map(|file| {
+        let path = file.path.to_string_lossy();
+        quote!(
+            const _: &str = include_str!(#path);
+        )
+    });
+
     let mut items: Vec<Item> = Vec::new();
     for field in &fields.named {
         let serde = serde_attrs::field(&field.attrs)?;
@@ -145,14 +208,14 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             quote!(<#ty as #krate::config::FieldType>::KIND)
         };
         let checks = type_checks(ty, &attrs, &krate)?;
+        let label = localized(&files, &name, |e| e.label.as_ref(), &krate)
+            .expect("en_US labels are checked by locales::load");
         let mut build = quote! {
-            let mut option = #krate::config::ConfigOption::new(
-                #name,
-                #kind,
-                // Replaced by the locale files.
-                #krate::config::Localized::en_us(#name),
-            );
+            let mut option = #krate::config::ConfigOption::new(#name, #kind, #label);
         };
+        if let Some(help) = localized(&files, &name, |e| e.help.as_ref(), &krate) {
+            build.extend(quote!(option = option.help(#help);));
+        }
         if !optional && serde.default.is_none() && !container.default {
             build.extend(quote!(option = option.required();));
         }
@@ -178,6 +241,23 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         if let Some(max) = &attrs.max {
             build.extend(quote!(option = option.max(#max).expect("checked at compile time");));
         }
+        let overrides = files
+            .iter()
+            .find(|f| f.locale == "en_US")
+            .and_then(|f| f.entries.get(&name))
+            .map(|entry| {
+                let pairs = entry.options.iter().map(|(k, v)| quote!((#k, #v)));
+                quote! {
+                    .map(|(key, label)| {
+                        let overrides: &[(&str, &str)] = &[#(#pairs),*];
+                        let label = overrides
+                            .iter()
+                            .find(|(k, _)| *k == key)
+                            .map_or(label, |(_, label)| *label);
+                        (key, label)
+                    })
+                }
+            });
         build.extend(quote! {
             if matches!(
                 <#ty as #krate::config::FieldType>::KIND,
@@ -187,7 +267,8 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                     .options(
                         <#ty as #krate::config::FieldType>::CHOICES
                             .iter()
-                            .map(|choice| (*choice, *choice)),
+                            .map(|choice| (*choice, *choice))
+                            #overrides,
                     )
                     .expect("checked above");
             }
@@ -210,6 +291,8 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     }
     let options = attach_children(items, &krate)?;
     Ok(quote! {
+        #(#tracked)*
+
         impl #krate::channel::ChannelConfig for #ident {
             fn config_attrs() -> ::std::vec::Vec<#krate::config::ConfigOption> {
                 ::std::vec![#(#options),*]

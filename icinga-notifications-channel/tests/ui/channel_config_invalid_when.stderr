@@ -1,5 +1,5 @@
 error[E0080]: evaluation panicked: the parent has no such option value
-  --> tests/ui/channel_config_invalid_when.rs:12:36
+  --> tests/ui/channel_config_invalid_when.rs:13:36
    |
-12 |     #[config(parent = "m", when = ["B"])]
+13 |     #[config(parent = "m", when = ["B"])]
    |                                    ^^^ evaluation of `<C as icinga_notifications_channel::channel::ChannelConfig>::config_attrs::_` failed here

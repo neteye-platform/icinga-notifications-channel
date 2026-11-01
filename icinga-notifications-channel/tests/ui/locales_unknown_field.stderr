@@ -1,0 +1,5 @@
+error: ../../../../icinga-notifications-channel/tests/locales/bad_unknown_field/en_US.toml: unknown option `zzz`, valid options: a
+ --> tests/ui/locales_unknown_field.rs:5:20
+  |
+5 | #[config(locales = "../../../../icinga-notifications-channel/tests/locales/bad_unknown_field")]
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

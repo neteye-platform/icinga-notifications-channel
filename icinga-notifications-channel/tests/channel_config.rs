@@ -18,6 +18,7 @@ fn default_user() -> String {
 
 #[derive(Deserialize, icinga_notifications_channel::ChannelConfig)]
 #[serde(rename_all = "camelCase")]
+#[config(locales = "tests/locales/everything")]
 struct Everything {
     url_template: String,
     #[serde(default = "default_user")]
@@ -41,7 +42,7 @@ struct Everything {
 #[test]
 fn maps_every_field() {
     let attrs = serde_json::to_value(Everything::config_attrs()).unwrap();
-    let label = |name: &str| json!({ "en_US": name });
+    let label = |name: &str| json!({ "en_US": format!("L {name}") });
     assert_eq!(
         attrs,
         json!([
@@ -69,6 +70,7 @@ fn maps_every_field() {
 
 #[derive(Deserialize, icinga_notifications_channel::ChannelConfig)]
 #[serde(default)]
+#[config(locales = "tests/locales/whole_default")]
 struct WholeDefault {
     port: u16,
 }
@@ -92,6 +94,7 @@ fn compile_errors() {
 }
 
 #[derive(Deserialize, icinga_notifications_channel::ChannelConfig)]
+#[config(locales = "tests/locales/children")]
 struct WithChildren {
     method: Method,
     #[config(parent = "method", when = ["post"])]
@@ -111,7 +114,7 @@ fn children_are_nested_under_their_parent() {
     assert_eq!(
         attrs[0]["children"],
         json!([{
-            "name": "body", "type": "string", "label": { "en_US": "body" },
+            "name": "body", "type": "string", "label": { "en_US": "L body" },
             "parent_values": ["post"], "min": null, "max": null
         }])
     );

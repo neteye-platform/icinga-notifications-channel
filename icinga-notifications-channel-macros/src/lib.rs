@@ -2,6 +2,7 @@
 
 mod channel_config;
 mod config_enum;
+mod locales;
 mod serde_attrs;
 
 use proc_macro::TokenStream;
