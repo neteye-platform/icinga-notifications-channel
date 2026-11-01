@@ -6,11 +6,12 @@ pub mod config;
 pub mod delivery;
 pub mod error;
 pub mod info;
-// Used by `run_with` from the next step on.
+pub mod log;
+pub mod notification;
+pub mod state;
+
+// The modules below are wired together by `run_with` in the next steps.
 #[cfg_attr(not(test), allow(dead_code))]
 mod methods;
-pub mod notification;
-// Used by `run_with` from the next steps on.
 #[cfg_attr(not(test), allow(dead_code))]
 mod output;
-pub mod state;
