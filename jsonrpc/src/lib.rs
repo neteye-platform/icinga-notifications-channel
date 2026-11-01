@@ -214,3 +214,6 @@ pub mod tokio;
 
 #[cfg(feature = "macros")]
 pub use jsonrpc_rs_macros::jsonrpc;
+
+#[doc(hidden)]
+pub use serde;

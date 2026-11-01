@@ -2,8 +2,7 @@
 
 # This test checks all the examples from the jsonrpc example section https://www.jsonrpc.org/specification#examples
 # against the server.
-cargo build --example nl_jsonrpc
-
+cargo build --example nl_jsonrpc || exit 1
 
 function test_request() {
     REQUEST="$1"

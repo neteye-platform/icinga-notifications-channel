@@ -27,13 +27,13 @@ fn main() {
 }
 
 #[jsonrpc]
-async fn subtract(minuend: i32, subtrahend: i32) -> i32 {
+fn subtract(minuend: i32, subtrahend: i32) -> i32 {
     minuend - subtrahend
 }
 
-#[jsonrpc]
-async fn sum(a: i32, b: i32, c: i32) -> i32 {
-    a + b + c
+#[jsonrpc(params = "params")]
+fn sum(params: Vec<i32>) -> i32 {
+    params.into_iter().sum()
 }
 
 #[jsonrpc(state = "state", name = "get_data")]
