@@ -120,11 +120,24 @@ impl JsonRpcErrorCode {
 }
 
 pub type JsonRpcMethodCall = Box<dyn Future<Output = JsonRpcResponse> + 'static + Send>;
-pub type JsonRpcMethod = &'static dyn Fn(
-    &ServerState,
-    &JsonRpcRequest<'_>,
-) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle>;
+pub type JsonRpcMethod =
+    &'static dyn for<'server, 'request> Fn(
+        &'server ServerState,
+        &'request JsonRpcRequest<'request>,
+    ) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle>;
 
+pub struct JsonRpcNamedMethod {
+    name: &'static str,
+    method: JsonRpcMethod,
+}
+
+impl JsonRpcNamedMethod {
+    pub const fn new(name: &'static str, method: JsonRpcMethod) -> Self {
+        Self { name, method }
+    }
+}
+
+#[derive(Clone)]
 pub struct ServerBuilder {
     registered_methods: HashMap<String, JsonRpcMethod>,
     managed_state: ServerState,
@@ -144,6 +157,12 @@ impl ServerBuilder {
 
     pub fn register(mut self, name: String, method: JsonRpcMethod) -> Self {
         self.registered_methods.insert(name, method);
+        self
+    }
+
+    pub fn register_named(mut self, named: JsonRpcNamedMethod) -> Self {
+        self.registered_methods
+            .insert(named.name.to_string(), named.method);
         self
     }
 
@@ -335,6 +354,7 @@ impl<Source: Stream<Item = String> + Unpin> Stream for Dispatcher<Source> {
     }
 }
 
+#[derive(Clone)]
 pub struct ServerState {
     managed_state: Vec<Arc<dyn Any + Send + Sync + 'static>>,
 }

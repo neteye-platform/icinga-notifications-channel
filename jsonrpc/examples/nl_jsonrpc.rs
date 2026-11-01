@@ -1,18 +1,18 @@
 use jsonrpc_rs::{
+    jsonrpc,
     server::{
         JsonRpcErrorCode, JsonRpcMethodCall, JsonRpcRequest, JsonRpcResponseSingle, JsonRpcResult,
         ServerBuilder, ServerState,
     },
     tokio::BuilderTokioServerExt,
 };
-use serde::Deserialize;
 
 fn main() {
     let codec = tokio_util::codec::LinesCodec::new();
     let server = ServerBuilder::new()
         .manage(("hello".to_string(), 5))
-        .register("subtract".to_string(), &rpc_test_method_subtract_dispatch)
-        .register("sum".to_string(), &rpc_test_method_sum_dispatch)
+        .register_named(subtract)
+        .register_named(sum)
         .register("get_data".to_string(), &rpc_test_method_get_data_dispatch)
         .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
 
@@ -23,40 +23,14 @@ fn main() {
         .unwrap();
 }
 
-async fn subtract(lhs: i32, rhs: i32) -> i32 {
-    lhs - rhs
+#[jsonrpc]
+async fn subtract(minuend: i32, subtrahend: i32) -> i32 {
+    minuend - subtrahend
 }
 
-fn rpc_test_method_subtract_dispatch<'a>(
-    _: &ServerState,
-    request: &JsonRpcRequest<'a>,
-) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle> {
-    #[derive(Deserialize)]
-    struct Params {
-        minuend: i32,
-        subtrahend: i32,
-    }
-
-    let params: Params = jsonrpc_rs::server::parse_params(&request)?;
-    Ok(Box::new(async move {
-        let result = subtract(params.minuend, params.subtrahend).await;
-        JsonRpcResponseSingle::new(JsonRpcResult::Ok(Box::new(result))).into()
-    }))
-}
-
-async fn sum(l: &[i32]) -> i32 {
-    l.iter().sum()
-}
-
-fn rpc_test_method_sum_dispatch<'a>(
-    _: &ServerState,
-    request: &JsonRpcRequest<'a>,
-) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle> {
-    let params: Vec<i32> = jsonrpc_rs::server::parse_params(&request)?;
-    Ok(Box::new(async move {
-        let result = sum(&params).await;
-        JsonRpcResponseSingle::new(JsonRpcResult::Ok(Box::new(result))).into()
-    }))
+#[jsonrpc]
+async fn sum(a: i32, b: i32, c: i32) -> i32 {
+    a + b + c
 }
 
 async fn get_data(state: &(String, i32)) -> (String, i32) {
