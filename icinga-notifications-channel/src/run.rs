@@ -1,6 +1,6 @@
 //! Running a channel on a pair of byte streams.
 
-use std::{future::Future, io, time::Duration};
+use std::{future::Future, io, num::NonZeroUsize, time::Duration};
 
 use futures_util::{
     FutureExt, StreamExt,
@@ -23,12 +23,17 @@ pub struct RunOptions {
     /// How long running requests may take to finish after a shutdown
     /// request. Requests still running afterwards are abandoned.
     pub drain_timeout: Duration,
+    /// How many requests may run at the same time. While the limit is
+    /// reached, no further input is read, so a slow receiver cannot make
+    /// pending requests pile up in memory. Unlimited by default.
+    pub max_parallel_requests: NonZeroUsize,
 }
 
 impl Default for RunOptions {
     fn default() -> Self {
         Self {
             drain_timeout: Duration::from_secs(5),
+            max_parallel_requests: NonZeroUsize::MAX,
         }
     }
 }
@@ -132,7 +137,7 @@ async fn session<C: Channel, Guard>(
             )
         })
         .take_until(shutdown.clone());
-    let server = server(channel);
+    let server = server(channel, options.max_parallel_requests.get());
     let serve = server.serve(source, response_sink(tx.clone()));
     // Starts counting once shutdown was requested.
     let deadline = async {
@@ -279,7 +284,10 @@ mod tests {
         let (mut client_write, read) = duplex(64 * 1024);
         let (write, mut client_read) = duplex(64 * 1024);
         let (trigger, triggered) = tokio::sync::oneshot::channel::<()>();
-        let options = RunOptions { drain_timeout };
+        let options = RunOptions {
+            drain_timeout,
+            ..RunOptions::default()
+        };
         let channel = tokio::spawn(run_with(
             Logging,
             read,

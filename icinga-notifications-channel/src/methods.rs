@@ -28,7 +28,7 @@ struct Shared<C: Channel> {
 }
 
 /// Builds the server answering the channel protocol for `channel`.
-pub(crate) fn server<C: Channel>(channel: C) -> Server {
+pub(crate) fn server<C: Channel>(channel: C, max_parallel_requests: usize) -> Server {
     ServerBuilder::new()
         .manage(Shared {
             channel: Arc::new(channel),
@@ -37,6 +37,7 @@ pub(crate) fn server<C: Channel>(channel: C) -> Server {
         .register("GetInfo".into(), &get_info::<C>)
         .register("SetConfig".into(), &set_config::<C>)
         .register("SendNotification".into(), &send_notification::<C>)
+        .max_parallel_requests(max_parallel_requests)
         .map_requests(&tokio_parallel)
         .build()
 }
@@ -189,7 +190,7 @@ mod tests {
     /// Sends each request on its own (so a `SetConfig` is applied before the
     /// next call) to one server, and returns the responses.
     async fn session(requests: Vec<(&str, Value)>) -> Vec<Value> {
-        let server = server(Test);
+        let server = server(Test, usize::MAX);
         let mut responses = Vec::new();
         for (id, (method, params)) in requests.into_iter().enumerate() {
             let line = json!({"jsonrpc": "2.0", "method": method, "params": params, "id": id});

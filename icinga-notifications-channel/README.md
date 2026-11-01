@@ -114,6 +114,9 @@ fn german_is_complete() {
 - `run` stops on end of stdin, SIGINT or SIGTERM, then waits up to
   `RunOptions::drain_timeout` (5 s) for running requests before abandoning
   them.
+- `RunOptions::max_parallel_requests` bounds the requests running at once
+  (unlimited by default). At the limit, input is no longer read, which
+  pushes back on the sender instead of queueing work in memory.
 - `SetConfig` swaps the configuration without a restart; an invalid one
   (`Channel::validate`) keeps the previous one. `SendNotification` fails
   until the first `SetConfig`.
