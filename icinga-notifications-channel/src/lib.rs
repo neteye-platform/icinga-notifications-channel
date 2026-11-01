@@ -10,4 +10,7 @@ pub mod info;
 #[cfg_attr(not(test), allow(dead_code))]
 mod methods;
 pub mod notification;
+// Used by `run_with` from the next steps on.
+#[cfg_attr(not(test), allow(dead_code))]
+mod output;
 pub mod state;
