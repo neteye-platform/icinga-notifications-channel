@@ -8,10 +8,10 @@ pub mod error;
 pub mod info;
 pub mod log;
 pub mod notification;
+mod run;
 pub mod state;
 
-// The modules below are wired together by `run_with` in the next steps.
-#[cfg_attr(not(test), allow(dead_code))]
 mod methods;
-#[cfg_attr(not(test), allow(dead_code))]
 mod output;
+
+pub use run::run_with;

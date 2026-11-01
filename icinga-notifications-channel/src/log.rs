@@ -19,7 +19,6 @@ pub struct ChannelLogLayer {
 }
 
 impl ChannelLogLayer {
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn new(sender: OutgoingSender) -> Self {
         Self { sender }
     }

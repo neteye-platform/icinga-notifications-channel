@@ -208,14 +208,16 @@ pub type JsonRpcMethodCall = Box<dyn Future<Output = JsonRpcResponse> + 'static 
 /// * `Err(JsonRpcResponseSingle)` – immediate error response
 ///
 /// Manual handlers allow custom validation, metrics, tracing, etc.
-pub type JsonRpcMethod =
-    &'static dyn for<'server, 'request> Fn(
-        &'server ServerState,
-        &'request JsonRpcRequest<'request>,
-    ) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle>;
+pub type JsonRpcMethod = &'static (
+             dyn for<'server, 'request> Fn(
+    &'server ServerState,
+    &'request JsonRpcRequest<'request>,
+) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle>
+                 + Sync
+         );
 
 /// Wraps a method future, see [`ServerBuilder::map_requests`].
-pub type RequestMapper = &'static dyn Fn(Pin<JsonRpcMethodCall>) -> Pin<JsonRpcMethodCall>;
+pub type RequestMapper = &'static (dyn Fn(Pin<JsonRpcMethodCall>) -> Pin<JsonRpcMethodCall> + Sync);
 
 /// Static pairing of JSON-RPC method name and its dispatch function.
 ///
