@@ -1,10 +1,13 @@
 use std::{
+    any::Any,
     collections::HashMap,
     pin::{Pin, pin},
+    sync::Arc,
     task::Poll,
     usize,
 };
 
+use async_lock::RwLock;
 use erased_serde::Serialize as DynSerialize;
 use futures_util::{
     Stream, StreamExt, ready,
@@ -117,11 +120,14 @@ impl JsonRpcErrorCode {
 }
 
 pub type JsonRpcMethodCall = Box<dyn Future<Output = JsonRpcResponse> + 'static + Send>;
-pub type JsonRpcMethod =
-    &'static dyn Fn(&JsonRpcRequest<'_>) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle>;
+pub type JsonRpcMethod = &'static dyn Fn(
+    &ServerState,
+    &JsonRpcRequest<'_>,
+) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle>;
 
 pub struct ServerBuilder {
     registered_methods: HashMap<String, JsonRpcMethod>,
+    managed_state: ServerState,
     mapper: Option<&'static dyn Fn(Pin<JsonRpcMethodCall>) -> Pin<JsonRpcMethodCall>>,
     max_parallel_requests: usize,
 }
@@ -131,6 +137,7 @@ impl ServerBuilder {
         Self {
             registered_methods: HashMap::new(),
             mapper: None,
+            managed_state: ServerState::new(),
             max_parallel_requests: usize::MAX,
         }
     }
@@ -153,10 +160,16 @@ impl ServerBuilder {
         self
     }
 
+    pub fn manage<T: Send + Sync + 'static>(mut self, state: T) -> Self {
+        self.managed_state.manage(state);
+        self
+    }
+
     pub fn build<Source: Stream<Item = String> + Unpin>(self, source: Source) -> Server<Source> {
         let dispatcher = Dispatcher {
             registered_methods: self.registered_methods,
             source: source,
+            state: self.managed_state,
         };
 
         Server {
@@ -170,6 +183,7 @@ impl ServerBuilder {
 
 struct Dispatcher<Source> {
     registered_methods: HashMap<String, JsonRpcMethod>,
+    state: ServerState,
     source: Source,
 }
 
@@ -289,7 +303,7 @@ impl<Source> Dispatcher<Source> {
             return Err(method_not_found(req.method.clone()));
         };
 
-        method_call(&req)
+        method_call(&self.state, &req)
     }
 }
 
@@ -318,6 +332,39 @@ impl<Source: Stream<Item = String> + Unpin> Stream for Dispatcher<Source> {
                 }
             }
         }
+    }
+}
+
+pub struct ServerState {
+    managed_state: Vec<Arc<dyn Any + Send + Sync + 'static>>,
+}
+
+impl Default for ServerState {
+    fn default() -> Self {
+        Self {
+            managed_state: Default::default(),
+        }
+    }
+}
+
+impl ServerState {
+    fn new() -> Self {
+        Default::default()
+    }
+
+    fn manage<T: Send + Sync + 'static>(&mut self, state: T) {
+        // ToDo: Check if the type is already managed?
+        let arc = Arc::new(RwLock::new(state));
+        self.managed_state.push(arc);
+    }
+
+    pub fn get_arc_lock<T: Send + Sync + 'static>(&self) -> Option<Arc<RwLock<T>>> {
+        for state in &self.managed_state {
+            if let Ok(lock) = state.clone().downcast::<RwLock<T>>() {
+                return Some(lock);
+            }
+        }
+        return None;
     }
 }
 
@@ -448,7 +495,7 @@ mod tests {
 
     use crate::server::{
         JsonRpcErrorCode, JsonRpcMethodCall, JsonRpcRequest, JsonRpcResponseSingle, JsonRpcResult,
-        ServerBuilder, parse_params,
+        ServerBuilder, ServerState, parse_params,
     };
 
     async fn rpc_test_method_subtract(lhs: i32, rhs: i32) -> i32 {
@@ -456,6 +503,7 @@ mod tests {
     }
 
     fn rpc_test_method_subtract_dispatch<'a>(
+        _: &ServerState,
         request: &JsonRpcRequest<'a>,
     ) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle> {
         #[derive(Deserialize)]
@@ -535,5 +583,18 @@ mod tests {
         assert_eq!(result1_str, r#"{"jsonrpc":"2.0","result":19,"id":1}"#);
         assert_eq!(result2_str, r#"{"jsonrpc":"2.0","result":-19,"id":2}"#);
         assert!(result3.is_none());
+    }
+
+    #[tokio::test]
+    async fn should_return_state() {
+        let mut state = ServerState::new();
+        state.manage(1u32);
+
+        let Some(arc) = state.get_arc_lock::<u32>() else {
+            unreachable!("Arc was just managed.");
+        };
+        std::mem::drop(state);
+        let lock = arc.read().await;
+        assert_eq!(*lock, 1);
     }
 }
