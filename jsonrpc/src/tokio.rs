@@ -9,13 +9,13 @@
 //! Example:
 //!
 //! ```no_run
-//! use jsonrpc_rs::{jsonrpc, server::ServerBuilder, tokio::BuilderTokioServerExt};
+//! use jsonrpc_rs::{jsonrpc, server::ServerBuilder, tokio::{BuilderTokioServerExt, TokioServer}};
 //!
 //! #[jsonrpc] async fn add(a: i64, b: i64) -> i64 { a + b }
 //!
 //! fn main() {
 //!     let codec = tokio_util::codec::LinesCodec::new();
-//!     let server = ServerBuilder::new()
+//!     let server: TokioServer<_, String, _, _, _> = ServerBuilder::new()
 //!         .register_named(add)
 //!         .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
 //!
@@ -232,14 +232,14 @@ impl<E, S> Unpin for TryStreamAdapter<E, S> {}
 ///
 /// # Example
 /// ```rust
-/// use jsonrpc_rs::{jsonrpc, server::ServerBuilder, tokio::BuilderTokioServerExt};
+/// use jsonrpc_rs::{jsonrpc, server::ServerBuilder, tokio::{BuilderTokioServerExt, TokioServer}};
 /// use jsonrpc_rs::tokio::tokio_parallel;
 ///
 /// #[jsonrpc] async fn add(a: i32, b: i32) -> i32 { a + b }
 ///
 /// fn main() {
 ///     let codec = tokio_util::codec::LinesCodec::new();
-///     let server = ServerBuilder::new()
+///     let server: TokioServer<_, String, _, _, _> = ServerBuilder::new()
 ///         .register_named(add)
 ///         .map_requests(&tokio_parallel)
 ///         .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());

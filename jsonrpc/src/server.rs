@@ -55,8 +55,8 @@ impl JsonRpcRequest<'_> {
     ///     "jsonrpc": "2.0",
     ///     "method": "foo",
     ///     "params": { "a": 1 }
-    /// }"#);
-    /// assert_eq!(req.param_str(), r#"{ "a": 1}"#);
+    /// }"#).unwrap();
+    /// assert_eq!(req.param_str(), r#"{ "a": 1 }"#);
     /// ```
     pub fn param_str(&self) -> &str {
         // If no params are given, default to an empty object
@@ -542,7 +542,7 @@ impl ServerState {
     ///
     /// Stored values are wrapped in `Arc<RwLock<T>>`. Duplicate types are
     /// allowed; retrieval returns the first matching instance.
-    fn manage<T: Send + Sync + 'static>(&mut self, state: T) {
+    pub fn manage<T: Send + Sync + 'static>(&mut self, state: T) {
         // ToDo: Check if the type is already managed?
         let arc = Arc::new(RwLock::new(state));
         self.managed_state.push(arc);
@@ -664,7 +664,9 @@ impl<I: Into<Vec<u8>>, Source: Stream<Item = I> + Unpin> Stream for Server<Sourc
 /// struct Args { a: i32, b: i32 }
 ///
 /// let req: JsonRpcRequest = from_str(r#"{"jsonrpc":"2.0","method":"m","params":{"a":1,"b":2},"id":1}"#).unwrap();
-/// let parsed: Args = parse_params(&req).unwrap();
+/// let Ok(parsed) = parse_params::<Args>(&req) else {
+///     panic!();
+/// };
 /// assert_eq!(parsed.a + parsed.b, 3);
 /// ```
 pub fn parse_params<T: DeserializeOwned>(req: &JsonRpcRequest) -> Result<T, JsonRpcResponseSingle> {

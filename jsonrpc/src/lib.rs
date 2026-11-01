@@ -23,7 +23,7 @@
 //! ## Quick Start (Macro-Based)
 //!
 //! ```rust,no_run
-//! use jsonrpc_rs::{jsonrpc, server::ServerBuilder, tokio::BuilderTokioServerExt};
+//! use jsonrpc_rs::{jsonrpc, server::ServerBuilder, tokio::{BuilderTokioServerExt, TokioServer}};
 //!
 //! struct ManagedState { greeting: String }
 //!
@@ -40,7 +40,7 @@
 //!
 //! fn main() {
 //!     let codec = tokio_util::codec::LinesCodec::new();
-//!     let server = ServerBuilder::new()
+//!     let server: TokioServer<_, String, _, _, _> = ServerBuilder::new()
 //!         .manage(ManagedState { greeting: "Hello".into() })
 //!         .register_named(add)
 //!         .register_named(ping)
@@ -81,7 +81,7 @@
 //!
 //! A request without an `id` (or with `null` id) is a notification. No response will be emitted, per spec.
 //!
-//! ```
+//! ```text
 //! {"jsonrpc":"2.0","method":"add","params":[1,2]}
 //! ```
 //!
@@ -115,7 +115,7 @@
 //! ```rust
 //! use jsonrpc_rs::server::{ServerBuilder, JsonRpcRequest, JsonRpcMethodCall,
 //!     JsonRpcResponseSingle, JsonRpcResult, JsonRpcErrorCode, parse_params, ServerState};
-//! use futures_util::stream;
+//! use futures_util::{stream, StreamExt};
 //! use serde::Deserialize;
 //!
 //! #[derive(Deserialize)]
@@ -160,10 +160,13 @@
 //! each method future (e.g., spawn, add tracing, apply timeouts):
 //!
 //! ```rust
+//! # use jsonrpc_rs::server::ServerBuilder;
+//! # use tracing::Instrument;
+//! # ServerBuilder::new()
 //! .map_requests(&|fut| Box::pin(async move {
-//!     // Example: spawn onto Tokio
-//!     tokio::spawn(fut).await.unwrap()
-//! }))
+//!     let span = tracing::info_span!("jsonrpc-request");
+//!     fut.instrument(span).await
+//! }));
 //! ```
 //!
 //! ## Tokio Integration
