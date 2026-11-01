@@ -1,4 +1,32 @@
 [workspace]
-
+members = ["crates/*"]
 resolver = "3"
-members = ["jsonrpc", "jsonrpc-macros", "icinga-notifications-channel", "icinga-notifications-channel-macros"]
+
+[package]
+name = "icinga-notifications-channel"
+version = "0.1.0"
+edition = "2024"
+description = "Write Icinga Notifications channel plugins on top of jsonrpc-rs"
+
+[features]
+default = ["derive"]
+# Re-exports the `ChannelConfig` and `ConfigEnum` derive macros.
+derive = ["dep:icinga-notifications-channel-macros"]
+
+[dependencies]
+jsonrpc-rs = { path = "crates/jsonrpc" }
+icinga-notifications-channel-macros = { path = "crates/icinga-notifications-channel-macros", optional = true }
+async-lock = { version = "3.4.1", default-features = false }
+futures-util = { version = "0.3.31", features = ["sink"] }
+futures-channel = { version = "0.3.31", features = ["sink"] }
+tokio-util = { version = "0.7.16", features = ["codec"] }
+jiff = { version = "0.2", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.145", features = ["raw_value"] }
+tokio = { version = "1.48.0", features = ["rt", "macros", "io-std", "io-util", "time", "signal", "sync"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.20", default-features = false, features = ["registry", "std"] }
+
+[dev-dependencies]
+tokio = { version = "1.48.0", features = ["test-util"] }
+trybuild = "1"

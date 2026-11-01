@@ -1,5 +1,0 @@
-error: ../../../../icinga-notifications-channel/tests/locales/bad_bad_name/en-US.toml: the file name must be a locale in the format language_REGION, e.g. en_US.toml
- --> tests/ui/locales_bad_name.rs:5:20
-  |
-5 | #[config(locales = "../../../../icinga-notifications-channel/tests/locales/bad_bad_name")]
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

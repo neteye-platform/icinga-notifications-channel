@@ -1,0 +1,5 @@
+error: ../../../../tests/locales/bad_help_only/de_DE.toml: option `a` has a `help` but en_US.toml does not, which is required as the fallback
+ --> tests/ui/locales_help_only.rs:5:20
+  |
+5 | #[config(locales = "../../../../tests/locales/bad_help_only")]
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

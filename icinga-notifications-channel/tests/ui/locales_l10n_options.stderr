@@ -1,5 +1,0 @@
-error: ../../../../icinga-notifications-channel/tests/locales/bad_l10n_options/de_DE.toml: [a.options]: choices are not localized by Icinga Notifications, set them in en_US.toml only
- --> tests/ui/locales_l10n_options.rs:5:20
-  |
-5 | #[config(locales = "../../../../icinga-notifications-channel/tests/locales/bad_l10n_options")]
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

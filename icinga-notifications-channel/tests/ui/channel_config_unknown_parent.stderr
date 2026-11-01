@@ -1,5 +1,0 @@
-error: ../../../../icinga-notifications-channel/tests/locales/m_a/en_US.toml: unknown option `m`, valid options: a
-  --> tests/ui/channel_config_unknown_parent.rs:10:20
-   |
-10 | #[config(locales = "../../../../icinga-notifications-channel/tests/locales/m_a")]
-   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

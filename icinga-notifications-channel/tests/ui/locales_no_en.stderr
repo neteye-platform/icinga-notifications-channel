@@ -1,5 +1,0 @@
-error: ../../../../icinga-notifications-channel/tests/locales/bad_no_en has no en_US.toml, which is required as the fallback locale
- --> tests/ui/locales_no_en.rs:5:20
-  |
-5 | #[config(locales = "../../../../icinga-notifications-channel/tests/locales/bad_no_en")]
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
