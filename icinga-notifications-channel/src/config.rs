@@ -353,7 +353,35 @@ macro_rules! field_type {
 
 field_type!(String: String);
 field_type!(Bool: bool);
+field_type!(Secret: Secret);
 field_type!(Number: i8, i16, i32, i64, isize, u8, u16, u32, u64, usize, f32, f64);
+
+/// A configuration value that must not be shown or logged, such as a password.
+///
+/// It is a password input in the form, deserializes like a `String` and
+/// prints as `Secret(***)` in [`fmt::Debug`] output.
+#[derive(Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Secret(String);
+
+impl Secret {
+    /// The secret value.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for Secret {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Debug for Secret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Secret(***)")
+    }
+}
 
 /// An enum whose variants are the choices of a select option.
 ///

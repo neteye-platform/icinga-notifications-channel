@@ -1,4 +1,4 @@
-error[E0080]: evaluation panicked: `text` and `secret` require a String
+error[E0080]: evaluation panicked: `text` requires a String
  --> tests/ui/channel_config_text_on_number.rs:6:31
   |
 6 | struct C { #[config(text)] a: u8 }

@@ -23,8 +23,7 @@ struct Everything {
     url_template: String,
     #[serde(default = "default_user")]
     user: String,
-    #[config(secret)]
-    password: Option<String>,
+    password: Option<icinga_notifications_channel::config::Secret>,
     #[config(text)]
     body: Option<String>,
     #[serde(default)]

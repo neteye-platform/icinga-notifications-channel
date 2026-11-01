@@ -23,7 +23,7 @@ pub fn config_enum(input: TokenStream) -> TokenStream {
 /// Describes a struct as the configuration form of a channel.
 ///
 /// Field types map to form elements: `String` to a string (`#[config(text)]`
-/// for multi-line, `#[config(secret)]` for a password), numbers to a number
+/// for multi-line), `Secret` to a password, numbers to a number
 /// (`#[config(min = 1, max = 9)]`), `bool` to a checkbox, a `ConfigEnum` to a
 /// select and a `Vec`/`BTreeSet` of one to a multi-select. A field is
 /// required unless it is an `Option` or has a serde default. Names and

@@ -65,7 +65,8 @@ A complete channel is in [`examples/echo.rs`](examples/echo.rs).
 
 | Field type | Form element |
 |---|---|
-| `String` | single-line input; `#[config(text)]` multi-line, `#[config(secret)]` password |
+| `String` | single-line input; `#[config(text)]` multi-line |
+| `Secret` | password input, redacted in `Debug` |
 | numbers | number input; `#[config(min = 1, max = 10)]` |
 | `bool` | checkbox |
 | `#[derive(ConfigEnum)]` enum | select |

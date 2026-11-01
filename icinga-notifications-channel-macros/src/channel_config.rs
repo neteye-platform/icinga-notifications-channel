@@ -14,7 +14,6 @@ use crate::{
 #[derive(Default)]
 struct FieldAttrs {
     text: bool,
-    secret: bool,
     min: Option<Expr>,
     max: Option<Expr>,
     /// `parent = "field"`: the field whose value decides if this one shows.
@@ -29,8 +28,6 @@ fn field_attrs(field: &Field) -> syn::Result<FieldAttrs> {
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("text") {
                 attrs.text = true;
-            } else if meta.path.is_ident("secret") {
-                attrs.secret = true;
             } else if meta.path.is_ident("min") {
                 attrs.min = Some(meta.value()?.parse()?);
             } else if meta.path.is_ident("max") {
@@ -40,9 +37,7 @@ fn field_attrs(field: &Field) -> syn::Result<FieldAttrs> {
             } else if meta.path.is_ident("when") {
                 attrs.when = Some(meta.value()?.parse()?);
             } else {
-                return Err(
-                    meta.error("unknown option, expected text, secret, min, max, parent or when")
-                );
+                return Err(meta.error("unknown option, expected text, min, max, parent or when"));
             }
             Ok(())
         })?;
@@ -202,8 +197,6 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         };
         let kind = if attrs.text {
             quote!(#krate::config::ConfigType::Text)
-        } else if attrs.secret {
-            quote!(#krate::config::ConfigType::Secret)
         } else {
             quote!(<#ty as #krate::config::FieldType>::KIND)
         };
@@ -303,9 +296,6 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
 /// Compile-time assertions that the attributes fit the type's [`FieldType`].
 fn type_checks(ty: &Type, attrs: &FieldAttrs, krate: &TokenStream) -> syn::Result<TokenStream> {
-    if attrs.text && attrs.secret {
-        return Err(Error::new_spanned(ty, "`text` and `secret` are exclusive"));
-    }
     let mut checks = TokenStream::new();
     let mut require = |kind: TokenStream, message: &str| {
         checks.extend(quote_spanned! {ty.span()=>
@@ -318,8 +308,8 @@ fn type_checks(ty: &Type, attrs: &FieldAttrs, krate: &TokenStream) -> syn::Resul
             );
         });
     };
-    if attrs.text || attrs.secret {
-        require(quote!(String), "`text` and `secret` require a String");
+    if attrs.text {
+        require(quote!(String), "`text` requires a String");
     }
     if attrs.min.is_some() || attrs.max.is_some() {
         require(quote!(Number), "`min` and `max` require a number");
