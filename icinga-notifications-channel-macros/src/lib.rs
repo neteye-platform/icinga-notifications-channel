@@ -1,8 +1,7 @@
 //! Derive macros of `icinga-notifications-channel`. Use them through that crate.
 
+mod channel_config;
 mod config_enum;
-// Field helpers are used by `ChannelConfig` in a later change.
-#[allow(dead_code)]
 mod serde_attrs;
 
 use proc_macro::TokenStream;
@@ -16,6 +15,22 @@ use syn::{DeriveInput, parse_macro_input};
 pub fn config_enum(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     config_enum::expand(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Describes a struct as the configuration form of a channel.
+///
+/// Field types map to form elements: `String` to a string (`#[config(text)]`
+/// for multi-line, `#[config(secret)]` for a password), numbers to a number
+/// (`#[config(min = 1, max = 9)]`), `bool` to a checkbox, a `ConfigEnum` to a
+/// select and a `Vec`/`BTreeSet` of one to a multi-select. A field is
+/// required unless it is an `Option` or has a serde default. Names and
+/// defaults follow serde.
+#[proc_macro_derive(ChannelConfig, attributes(config))]
+pub fn channel_config(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    channel_config::expand(&input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

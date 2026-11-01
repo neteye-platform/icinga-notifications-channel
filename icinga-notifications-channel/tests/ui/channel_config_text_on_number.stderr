@@ -1,0 +1,5 @@
+error: `text` and `secret` require a String
+ --> tests/ui/channel_config_text_on_number.rs:4:31
+  |
+4 | struct C { #[config(text)] a: u8 }
+  |                               ^^

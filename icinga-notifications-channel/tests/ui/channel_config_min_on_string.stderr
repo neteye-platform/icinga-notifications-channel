@@ -1,0 +1,5 @@
+error: `min` and `max` require a number
+ --> tests/ui/channel_config_min_on_string.rs:4:27
+  |
+4 | struct C { #[config(min = 1)] a: String }
+  |                           ^

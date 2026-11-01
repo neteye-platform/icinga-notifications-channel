@@ -1,0 +1,92 @@
+#![allow(dead_code)]
+use std::collections::BTreeSet;
+
+use icinga_notifications_channel::{ConfigEnum, channel::ChannelConfig};
+use serde::Deserialize;
+use serde_json::json;
+
+#[derive(Deserialize, ConfigEnum, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "lowercase")]
+enum Method {
+    Get,
+    Post,
+}
+
+fn default_user() -> String {
+    "admin".into()
+}
+
+#[derive(Deserialize, icinga_notifications_channel::ChannelConfig)]
+#[serde(rename_all = "camelCase")]
+struct Everything {
+    url_template: String,
+    #[serde(default = "default_user")]
+    user: String,
+    #[config(secret)]
+    password: Option<String>,
+    #[config(text)]
+    body: Option<String>,
+    #[serde(default)]
+    #[config(min = 1, max = 10)]
+    retries: u8,
+    #[serde(default)]
+    verify: bool,
+    method: Method,
+    #[serde(rename = "methods")]
+    allowed: BTreeSet<Method>,
+    #[serde(skip)]
+    _internal: u8,
+}
+
+#[test]
+fn maps_every_field() {
+    let attrs = serde_json::to_value(Everything::config_attrs()).unwrap();
+    let label = |name: &str| json!({ "en_US": name });
+    assert_eq!(
+        attrs,
+        json!([
+            { "name": "urlTemplate", "type": "string", "label": label("urlTemplate"),
+              "required": true, "min": null, "max": null },
+            { "name": "user", "type": "string", "label": label("user"),
+              "default": "admin", "min": null, "max": null },
+            { "name": "password", "type": "secret", "label": label("password"),
+              "min": null, "max": null },
+            { "name": "body", "type": "text", "label": label("body"),
+              "min": null, "max": null },
+            { "name": "retries", "type": "number", "label": label("retries"),
+              "default": "0", "min": 1, "max": 10 },
+            { "name": "verify", "type": "bool", "label": label("verify"),
+              "default": false, "min": null, "max": null },
+            { "name": "method", "type": "option", "label": label("method"),
+              "required": true, "options": { "get": "get", "post": "post" },
+              "min": null, "max": null },
+            { "name": "methods", "type": "options", "label": label("methods"),
+              "required": true, "options": { "get": "get", "post": "post" },
+              "min": null, "max": null },
+        ])
+    );
+}
+
+#[derive(Deserialize, icinga_notifications_channel::ChannelConfig)]
+#[serde(default)]
+struct WholeDefault {
+    port: u16,
+}
+
+impl Default for WholeDefault {
+    fn default() -> Self {
+        Self { port: 8080 }
+    }
+}
+
+#[test]
+fn struct_default_is_used_per_field() {
+    let attrs = serde_json::to_value(WholeDefault::config_attrs()).unwrap();
+    assert_eq!(attrs[0]["default"], "8080");
+    assert!(attrs[0].get("required").is_none());
+}
+
+#[test]
+fn compile_errors() {
+    trybuild::TestCases::new().compile_fail("tests/ui/channel_config_*.rs");
+}

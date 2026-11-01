@@ -1,0 +1,5 @@
+error: unsupported field type, expected a string, number, bool, Option, Vec/BTreeSet or ConfigEnum
+ --> tests/ui/channel_config_unsupported_type.rs:4:15
+  |
+4 | struct C { a: (u8, u8) }
+  |               ^^^^^^^^
