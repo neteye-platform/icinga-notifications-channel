@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use jiff::Timestamp;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use crate::state::State;
@@ -71,7 +71,7 @@ pub struct Object {
 }
 
 /// The severity of an incident.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// Everything is fine.

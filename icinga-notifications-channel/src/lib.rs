@@ -2,6 +2,7 @@
 //! on top of `jsonrpc-rs`.
 
 pub mod config;
+pub mod delivery;
 pub mod error;
 pub mod info;
 pub mod notification;
