@@ -38,5 +38,12 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         impl ::icinga_notifications_channel::config::ConfigEnum for #ident {
             const VARIANTS: &'static [&'static str] = &[#(#names),*];
         }
+
+        impl ::icinga_notifications_channel::config::FieldType for #ident {
+            const KIND: ::icinga_notifications_channel::config::ConfigType =
+                ::icinga_notifications_channel::config::ConfigType::Option;
+            const CHOICES: &'static [&'static str] =
+                <Self as ::icinga_notifications_channel::config::ConfigEnum>::VARIANTS;
+        }
     })
 }

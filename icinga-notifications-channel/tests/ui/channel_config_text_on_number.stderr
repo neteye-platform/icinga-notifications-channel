@@ -1,5 +1,5 @@
-error: `text` and `secret` require a String
- --> tests/ui/channel_config_text_on_number.rs:4:31
+error[E0080]: evaluation panicked: `text` and `secret` require a String
+ --> tests/ui/channel_config_text_on_number.rs:5:31
   |
-4 | struct C { #[config(text)] a: u8 }
-  |                               ^^
+5 | struct C { #[config(text)] a: u8 }
+  |                               ^^ evaluation of `<C as icinga_notifications_channel::channel::ChannelConfig>::config_attrs::_` failed here

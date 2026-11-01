@@ -298,13 +298,48 @@ impl ConfigOption {
     }
 }
 
+/// How a Rust type is shown in the configuration form.
+///
+/// `#[derive(ChannelConfig)]` asks this trait for the [`ConfigType`] of every
+/// field, so the mapping never depends on how a type is spelled.
+/// `#[derive(ConfigEnum)]` implements it for enums.
+pub trait FieldType {
+    /// The form element used for fields of this type.
+    const KIND: ConfigType;
+    /// The selectable keys of [`ConfigType::Option`] and
+    /// [`ConfigType::Options`], empty otherwise.
+    const CHOICES: &'static [&'static str] = &[];
+}
+
+macro_rules! field_type {
+    ($kind:ident: $($ty:ty),+) => {
+        $(impl FieldType for $ty {
+            const KIND: ConfigType = ConfigType::$kind;
+        })+
+    };
+}
+
+field_type!(String: String);
+field_type!(Bool: bool);
+field_type!(Number: i8, i16, i32, i64, isize, u8, u16, u32, u64, usize, f32, f64);
+
 /// An enum whose variants are the choices of a select option.
 ///
 /// Derive it with `#[derive(ConfigEnum)]`; the names follow serde's
-/// `rename` and `rename_all`.
+/// `rename` and `rename_all`. The derive also implements [`FieldType`].
 pub trait ConfigEnum {
     /// The serialized names of all variants, in declaration order.
     const VARIANTS: &'static [&'static str];
+}
+
+impl<T: ConfigEnum> FieldType for Vec<T> {
+    const KIND: ConfigType = ConfigType::Options;
+    const CHOICES: &'static [&'static str] = T::VARIANTS;
+}
+
+impl<T: ConfigEnum> FieldType for std::collections::BTreeSet<T> {
+    const KIND: ConfigType = ConfigType::Options;
+    const CHOICES: &'static [&'static str] = T::VARIANTS;
 }
 
 #[cfg(test)]

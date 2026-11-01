@@ -1,28 +1,11 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, quote_spanned};
 use syn::{
     Data, DeriveInput, Error, Expr, Field, Fields, GenericArgument, Ident, PathArguments, Type,
     spanned::Spanned,
 };
 
 use crate::serde_attrs::{self, Container, Default};
-
-const NUMBERS: &[&str] = &[
-    "i8", "i16", "i32", "i64", "isize", "u8", "u16", "u32", "u64", "usize", "f32", "f64",
-];
-
-/// What a field is rendered as.
-enum Kind {
-    String,
-    Text,
-    Secret,
-    Number,
-    Bool,
-    /// A `ConfigEnum` type.
-    Option(Type),
-    /// A collection of a `ConfigEnum` type.
-    Options(Type),
-}
 
 /// The `#[config(...)]` attributes of a field.
 #[derive(Default)]
@@ -68,59 +51,6 @@ fn generic_arg<'a>(ty: &'a Type, names: &[&str]) -> Option<&'a Type> {
         GenericArgument::Type(inner) => Some(inner),
         _ => None,
     }
-}
-
-fn classify(ty: &Type, attrs: &FieldAttrs) -> syn::Result<Kind> {
-    if let Some(item) = generic_arg(ty, &["Vec", "BTreeSet"]) {
-        return Ok(Kind::Options(item.clone()));
-    }
-    let Type::Path(path) = ty else {
-        return Err(Error::new_spanned(
-            ty,
-            "unsupported field type, expected a string, number, bool, Option, Vec/BTreeSet or ConfigEnum",
-        ));
-    };
-    if path.qself.is_some() {
-        return Err(Error::new_spanned(ty, "unsupported field type"));
-    }
-    let name = path
-        .path
-        .segments
-        .last()
-        .expect("paths are not empty")
-        .ident
-        .to_string();
-    Ok(match name.as_str() {
-        "String" if attrs.text => Kind::Text,
-        "String" if attrs.secret => Kind::Secret,
-        "String" => Kind::String,
-        "bool" => Kind::Bool,
-        n if NUMBERS.contains(&n) => Kind::Number,
-        _ => Kind::Option(ty.clone()),
-    })
-}
-
-fn check_attrs(ty: &Type, kind: &Kind, attrs: &FieldAttrs) -> syn::Result<()> {
-    let is_string = matches!(kind, Kind::String | Kind::Text | Kind::Secret);
-    if attrs.text && !is_string || attrs.secret && !is_string {
-        return Err(Error::new_spanned(
-            ty,
-            "`text` and `secret` require a String",
-        ));
-    }
-    if attrs.text && attrs.secret {
-        return Err(Error::new_spanned(ty, "`text` and `secret` are exclusive"));
-    }
-    if let (Some(bound), false) = (
-        attrs.min.as_ref().or(attrs.max.as_ref()),
-        matches!(kind, Kind::Number),
-    ) {
-        return Err(Error::new_spanned(
-            bound,
-            "`min` and `max` require a number",
-        ));
-    }
-    Ok(())
 }
 
 fn option_name(ident: &Ident, field: &serde_attrs::Field, container: &Container) -> String {
@@ -184,22 +114,18 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             Some(inner) => (inner, true),
             None => (&field.ty, false),
         };
-        let kind = classify(ty, &attrs)?;
-        check_attrs(ty, &kind, &attrs)?;
-
-        let config_type = match &kind {
-            Kind::String => quote!(String),
-            Kind::Text => quote!(Text),
-            Kind::Secret => quote!(Secret),
-            Kind::Number => quote!(Number),
-            Kind::Bool => quote!(Bool),
-            Kind::Option(_) => quote!(Option),
-            Kind::Options(_) => quote!(Options),
+        let kind = if attrs.text {
+            quote!(#krate::config::ConfigType::Text)
+        } else if attrs.secret {
+            quote!(#krate::config::ConfigType::Secret)
+        } else {
+            quote!(<#ty as #krate::config::FieldType>::KIND)
         };
+        let checks = type_checks(ty, &attrs, &krate)?;
         let mut build = quote! {
             let mut option = #krate::config::ConfigOption::new(
                 #name,
-                #krate::config::ConfigType::#config_type,
+                #kind,
                 // Replaced by the locale files.
                 #krate::config::Localized::en_us(#name),
             );
@@ -229,10 +155,21 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         if let Some(max) = &attrs.max {
             build.extend(quote!(option = option.max(#max).expect("checked at compile time");));
         }
-        if let Kind::Option(ty) | Kind::Options(ty) = &kind {
-            build.extend(quote_spanned_options(ty, &krate));
-        }
-        options.push(quote!({ #build option }));
+        build.extend(quote! {
+            if matches!(
+                <#ty as #krate::config::FieldType>::KIND,
+                #krate::config::ConfigType::Option | #krate::config::ConfigType::Options
+            ) {
+                option = option
+                    .options(
+                        <#ty as #krate::config::FieldType>::CHOICES
+                            .iter()
+                            .map(|choice| (*choice, *choice)),
+                    )
+                    .expect("checked above");
+            }
+        });
+        options.push(quote!({ #checks #build option }));
     }
     Ok(quote! {
         impl #krate::channel::ChannelConfig for #ident {
@@ -243,14 +180,28 @@ pub fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     })
 }
 
-fn quote_spanned_options(ty: &Type, krate: &TokenStream) -> TokenStream {
-    quote::quote_spanned! {ty.span()=>
-        option = option
-            .options(
-                <#ty as #krate::config::ConfigEnum>::VARIANTS
-                    .iter()
-                    .map(|variant| (*variant, *variant)),
-            )
-            .expect("checked at compile time");
+/// Compile-time assertions that the attributes fit the type's [`FieldType`].
+fn type_checks(ty: &Type, attrs: &FieldAttrs, krate: &TokenStream) -> syn::Result<TokenStream> {
+    if attrs.text && attrs.secret {
+        return Err(Error::new_spanned(ty, "`text` and `secret` are exclusive"));
     }
+    let mut checks = TokenStream::new();
+    let mut require = |kind: TokenStream, message: &str| {
+        checks.extend(quote_spanned! {ty.span()=>
+            const _: () = assert!(
+                matches!(
+                    <#ty as #krate::config::FieldType>::KIND,
+                    #krate::config::ConfigType::#kind
+                ),
+                #message
+            );
+        });
+    };
+    if attrs.text || attrs.secret {
+        require(quote!(String), "`text` and `secret` require a String");
+    }
+    if attrs.min.is_some() || attrs.max.is_some() {
+        require(quote!(Number), "`min` and `max` require a number");
+    }
+    Ok(checks)
 }

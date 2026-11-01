@@ -1,6 +1,7 @@
 use icinga_notifications_channel::ChannelConfig;
+use serde::Deserialize;
 
-#[derive(ChannelConfig)]
+#[derive(Deserialize, ChannelConfig)]
 struct C { #[config(min = 1)] a: String }
 
 fn main() {}
