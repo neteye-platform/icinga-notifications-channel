@@ -37,7 +37,8 @@ Feature flags:
 | Feature     | Purpose |
 |-------------|---------|
 | `macros`    | Enables the `#[jsonrpc]` procedural macro for auto-registration & param parsing. |
-| `tokio_util`| Enables `tokio` integration (`build_with_codec`) for framed async IO. |
+| `tokio_util`| Enables `tokio` integration (`Server::serve_with_codec`) for framed async IO. |
+| `ordered`   | Sends responses in request order instead of completion order (see [Response Order](#response-order)). Off by default. |
 
 ---
 
@@ -47,8 +48,6 @@ Feature flags:
 use jsonrpc_rs::{
     jsonrpc,
     server::ServerBuilder,
-    tokio::BuilderTokioServerExt,
-    tokio::TokioServer,
 };
 
 struct Greetings { greeting: String }
@@ -68,16 +67,18 @@ async fn greet(app: &Greetings, name: String) -> String {
 
 fn main() {
     let codec = tokio_util::codec::LinesCodec::new();
-    let server: TokioServer<_, String, _, _, _> = ServerBuilder::new()
+    let server = ServerBuilder::new()
         .manage(Greetings { greeting: "Hello".into() })
         .register_named(add)
         .register_named(calculate_sum)
         .register_named(greet)
-        .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
+        .build();
 
     tokio::runtime::Builder::new_current_thread()
         .build().unwrap()
-        .block_on(server).unwrap();
+        .block_on(server.serve_with_codec(
+            codec, tokio::io::stdin(), tokio::io::stdout()))
+        .unwrap();
 }
 ```
 
@@ -180,7 +181,7 @@ use jsonrpc_rs::server::{
     JsonRpcResponseSingle, JsonRpcResult, JsonRpcErrorCode,
     parse_params, ServerState
 };
-use futures_util::{stream, StreamExt};
+use futures_util::stream;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -210,11 +211,14 @@ async fn main() {
         r#"{"jsonrpc":"2.0","method":"div","params":{"numerator":10,"denominator":2},"id":1}"#.to_string(),
         r#"{"jsonrpc":"2.0","method":"div","params":{"numerator":5,"denominator":0},"id":2}"#.to_string(),
     ];
-    let mut server = ServerBuilder::new()
+    let server = ServerBuilder::new()
         .register("div".to_string(), &div_dispatch)
-        .build(stream::iter(inputs));
+        .build();
 
-    while let Some(resp) = server.next().await {
+    // Any `Sink<JsonRpcResponse>` works; a `Vec` collects the responses.
+    let mut responses = Vec::new();
+    server.serve(stream::iter(inputs), &mut responses).await.unwrap();
+    for resp in responses {
         println!("{}", serde_json::to_string(&resp).unwrap());
     }
 }
@@ -230,6 +234,29 @@ Limit simultaneous method execution:
 use jsonrpc_rs::server::ServerBuilder;
 ServerBuilder::new().max_parallel_requests(32);
 ```
+
+### Response Order
+
+By default, responses are sent as soon as their request finishes, so a fast
+request can be answered before a slow one that arrived earlier. Clients match
+responses by `id`, as the spec requires.
+
+Enable the `ordered` feature to send responses in the order the requests were
+received. Requests still run in parallel (up to `max_parallel_requests`); only
+the output is reordered. A finished response waits until all earlier requests
+have been answered, so one slow request delays the responses after it.
+
+```toml
+jsonrpc-rs = { version = "0.x", features = ["ordered"] }
+```
+
+Cargo features are unified across the dependency graph: if any crate in a build
+enables `ordered`, every server in that build uses it.
+
+Notifications produce no response, but they still hold their place while running:
+a slow notification delays the responses to requests received after it.
+Batches are unaffected by this feature: their responses always follow the order
+of the requests inside the batch.
 
 Wrap method futures (e.g., spawn, trace, timeout):
 
@@ -269,7 +296,6 @@ Under the `tokio_util` feature:
 
 ```rust
 use jsonrpc_rs::{server::ServerBuilder, jsonrpc};
-use crate::jsonrpc_rs::tokio::{BuilderTokioServerExt, TokioServer};
 
 #[jsonrpc]
 fn add(lhs: i32, rhs: i32) -> i32 {
@@ -277,17 +303,16 @@ fn add(lhs: i32, rhs: i32) -> i32 {
 }
 
 let codec = tokio_util::codec::LinesCodec::new();
-let server: TokioServer<_, String, _, _, _> = ServerBuilder::new()
-    .register_named(add)
-    .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
+let server = ServerBuilder::new().register_named(add).build();
 
 tokio::runtime::Builder::new_current_thread()
     .build().unwrap()
-    .block_on(server).unwrap();
+    .block_on(server.serve_with_codec(
+        codec, tokio::io::stdin(), tokio::io::stdout()))
+    .unwrap();
 ```
 
-You can supply any codec implementing `Decoder<Item = I>` and `Encoder<O>` where `I: Into<Vec<u8>>`
-and `O: From<String>`.
+You can supply any codec implementing `Decoder` (with `Item: Into<Vec<u8>>`) and `Encoder<String>`.
 
 ---
 
@@ -326,7 +351,7 @@ Implemented helpers:
 | Batch               | `JsonRpcResponse::Bulk`                            |
 | Error Object        | `JsonRpcResult::Err`, `JsonRpcErrorCode`           |
 | Notification        | `id: None` (response suppressed)                   |
-| Transport Agnostic  | `ServerBuilder::build(Stream<Item = impl Into<Vec<u8>>)` |
+| Transport Agnostic  | `Server::serve(Stream<Item = impl Into<Vec<u8>>>, Sink<JsonRpcResponse>)` |
 
 ---
 

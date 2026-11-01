@@ -247,7 +247,7 @@ fn generate_state_code(
     };
 
     let call_field = if ref_ty.mutability.is_some() {
-        quote! { ::std::ops::Deref::deref(& #ident .write().await) }
+        quote! { ::std::ops::DerefMut::deref_mut(&mut #ident .write().await) }
     } else {
         quote! { ::std::ops::Deref::deref(& #ident .read().await) }
     };

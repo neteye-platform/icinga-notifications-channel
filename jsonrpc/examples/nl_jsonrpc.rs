@@ -1,7 +1,7 @@
 use jsonrpc_rs::{
     jsonrpc,
     server::{JsonRpcErrorCode, JsonRpcResult, ServerBuilder},
-    tokio::{BuilderTokioServerExt, TokioServer, tokio_parallel},
+    tokio::tokio_parallel,
 };
 
 struct ManagedState {
@@ -10,7 +10,7 @@ struct ManagedState {
 
 fn main() {
     let codec = tokio_util::codec::LinesCodec::new();
-    let server: TokioServer<_, String, _, _, _> = ServerBuilder::new()
+    let server = ServerBuilder::new()
         .manage(ManagedState {
             state: ("hello".to_string(), 5),
         })
@@ -20,12 +20,12 @@ fn main() {
         .register_named(state_managed)
         .register_named(internal_server_error)
         .map_requests(&tokio_parallel)
-        .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
+        .build();
 
     tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap()
-        .block_on(server)
+        .block_on(server.serve_with_codec(codec, tokio::io::stdin(), tokio::io::stdout()))
         .unwrap();
 }
 
