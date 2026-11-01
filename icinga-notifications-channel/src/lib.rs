@@ -14,4 +14,4 @@ pub mod state;
 mod methods;
 mod output;
 
-pub use run::run_with;
+pub use run::{RunOptions, run, run_with, run_with_subscriber};
