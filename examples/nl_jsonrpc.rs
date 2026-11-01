@@ -1,28 +1,23 @@
-use futures_util::StreamExt;
-use jsonrpc_rs::server::{
-    JsonRpcMethodCall, JsonRpcRequest, JsonRpcResponseSingle, JsonRpcResult, ServerBuilder,
+use jsonrpc_rs::{
+    server::{
+        JsonRpcMethodCall, JsonRpcRequest, JsonRpcResponseSingle, JsonRpcResult, ServerBuilder,
+    },
+    tokio::BuilderTokioServerExt,
 };
 use serde::Deserialize;
-use tokio_util::codec::{FramedRead, FramedWrite};
 
 fn main() {
     let codec = tokio_util::codec::LinesCodec::new();
-
-    let framed_reader = FramedRead::new(tokio::io::stdin(), codec.clone()).map(|f| f.unwrap());
-    let framed_writer = FramedWrite::new(tokio::io::stdout(), codec);
-
-    let future = ServerBuilder::new()
+    let server = ServerBuilder::new()
         .register("subtract".to_string(), &rpc_test_method_subtract_dispatch)
         .register("sum".to_string(), &rpc_test_method_sum_dispatch)
         .register("get_data".to_string(), &rpc_test_method_get_data_dispatch)
-        .build(framed_reader)
-        .map(|r| Ok(serde_json::to_string(&r).unwrap()))
-        .forward(framed_writer);
+        .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
 
     tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap()
-        .block_on(future)
+        .block_on(server)
         .unwrap();
 }
 
