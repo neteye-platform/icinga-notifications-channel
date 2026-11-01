@@ -1,7 +1,7 @@
 use jsonrpc_rs::{
     jsonrpc,
     server::{JsonRpcErrorCode, JsonRpcResult, ServerBuilder},
-    tokio::{BuilderTokioServerExt, TokioServer},
+    tokio::{BuilderTokioServerExt, TokioServer, tokio_parallel},
 };
 
 struct ManagedState {
@@ -18,6 +18,8 @@ fn main() {
         .register_named(sum)
         .register_named(div)
         .register_named(state_managed)
+        .register_named(internal_server_error)
+        .map_requests(&tokio_parallel)
         .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
 
     tokio::runtime::Builder::new_current_thread()
@@ -61,4 +63,9 @@ fn div(divident: i32, divisor: i32) -> Result<f32, DivByZeroError> {
     }
 
     Ok(divident as f32 / divisor as f32)
+}
+
+#[jsonrpc]
+fn internal_server_error() {
+    panic!()
 }

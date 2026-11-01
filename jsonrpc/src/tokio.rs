@@ -27,13 +27,21 @@
 //!
 //! Each inbound frame must be a complete JSON-RPC request (single or batch). Outbound
 //! responses are serialized as a single line/frame.
-use std::{io, marker::PhantomData, pin::pin, task::Poll};
+use std::{
+    io,
+    marker::PhantomData,
+    pin::{Pin, pin},
+    task::Poll,
+};
 
 use futures_util::{Sink, Stream, StreamExt, ready, stream::Forward};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 
-use crate::server::{JsonRpcResponse, Server, ServerBuilder};
+use crate::server::{
+    JsonRpcErrorCode, JsonRpcMethodCall, JsonRpcResponse, JsonRpcResponseSingle, JsonRpcResult,
+    Server, ServerBuilder,
+};
 
 /// A `Future` (and internal stream forwarder) that drives a JSON-RPC server
 /// over an `AsyncRead`/`AsyncWrite` pair using a user-supplied codec.
@@ -213,3 +221,16 @@ impl<E, S: Stream + Unpin> Stream for TryStreamAdapter<E, S> {
 }
 
 impl<E, S> Unpin for TryStreamAdapter<E, S> {}
+
+pub fn tokio_parallel(input: Pin<JsonRpcMethodCall>) -> Pin<JsonRpcMethodCall> {
+    Box::pin(async move {
+        match tokio::task::spawn(input).await {
+            Ok(result) => result,
+            Err(_) => JsonRpcResponse::Single(JsonRpcResponseSingle::new(JsonRpcResult::Err {
+                code: JsonRpcErrorCode::internal_error(),
+                message: "Internal server errror".to_string(),
+                data: None,
+            })),
+        }
+    })
+}

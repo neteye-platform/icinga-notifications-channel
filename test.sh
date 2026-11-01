@@ -141,3 +141,9 @@ echo 'Divide by zero'
 test_request \
     '[{"jsonrpc": "2.0", "method": "div", "params": [1,2], "id":1},{"jsonrpc": "2.0", "method": "div", "params": [1,0], "id":2}]' \
     '[{"jsonrpc":"2.0","result":0.5,"id":1},{"jsonrpc":"2.0","error":{"code":-32001,"message":"Cannot divide by zero!"},"id":2}]'
+
+echo
+echo 'Internal server error'
+test_request \
+    '{"jsonrpc": "2.0", "method": "internal_server_error", "id": 1}' \
+    '{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal server errror"},"id":1}'
