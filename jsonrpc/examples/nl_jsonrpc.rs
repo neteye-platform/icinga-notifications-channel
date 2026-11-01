@@ -1,6 +1,6 @@
 use jsonrpc_rs::{
     jsonrpc,
-    server::ServerBuilder,
+    server::{JsonRpcErrorCode, JsonRpcResult, ServerBuilder},
     tokio::{BuilderTokioServerExt, TokioServer},
 };
 
@@ -16,6 +16,7 @@ fn main() {
         })
         .register_named(subtract)
         .register_named(sum)
+        .register_named(div)
         .register_named(state_managed)
         .build_with_codec(codec, tokio::io::stdin(), tokio::io::stdout());
 
@@ -39,4 +40,25 @@ fn sum(params: Vec<i32>) -> i32 {
 #[jsonrpc(state = "state", name = "get_data")]
 async fn state_managed(state: &ManagedState) -> (String, i32) {
     state.state.clone()
+}
+
+struct DivByZeroError;
+
+impl From<DivByZeroError> for JsonRpcResult {
+    fn from(_: DivByZeroError) -> Self {
+        JsonRpcResult::Err {
+            code: JsonRpcErrorCode::custom_error(-32001),
+            message: "Cannot divide by zero!".to_owned(),
+            data: None,
+        }
+    }
+}
+
+#[jsonrpc]
+fn div(divident: i32, divisor: i32) -> Result<f32, DivByZeroError> {
+    if divisor == 0 {
+        return Err(DivByZeroError);
+    }
+
+    Ok(divident as f32 / divisor as f32)
 }

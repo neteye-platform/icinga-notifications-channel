@@ -128,3 +128,16 @@ echo 'rpc call Batch (all notifications):'
 test_request \
     '[{"jsonrpc": "2.0", "method": "notify_sum", "params": [1,2,4]},{"jsonrpc": "2.0", "method": "notify_hello", "params": [7]}]' \
     ''
+
+
+echo
+echo '----------------------------------------------------'
+echo ' CUSTOM '
+echo '----------------------------------------------------'
+
+
+echo
+echo 'Divide by zero'
+test_request \
+    '[{"jsonrpc": "2.0", "method": "div", "params": [1,2], "id":1},{"jsonrpc": "2.0", "method": "div", "params": [1,0], "id":2}]' \
+    '[{"jsonrpc":"2.0","result":0.5,"id":1},{"jsonrpc":"2.0","error":{"code":-32001,"message":"Cannot divide by zero!"},"id":2}]'

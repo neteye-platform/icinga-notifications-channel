@@ -1,7 +1,7 @@
 use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{FnArg, Ident, ItemFn, Pat, PatType, Type, spanned::Spanned};
+use syn::{FnArg, Ident, ItemFn, Pat, PatType, ReturnType, Type, spanned::Spanned};
 
 #[derive(FromMeta, Default)]
 #[darling(derive_syn_parse)]
@@ -110,14 +110,8 @@ fn default_impl(input: &ItemFn, args: &MacroArgs) -> PartialError<proc_macro2::T
         }
     }
 
-    let awaitable = if input.sig.asyncness.is_some() {
-        quote! { .await }
-    } else {
-        quote! {}
-    };
-
-    let function_name = &input.sig.ident;
     // ToDo: Create diverging branches for `Result`
+    let dispatch = function_dispatch(input, &params_call_fields);
     let result = quote! {
         #[derive(::jsonrpc_rs::serde::Deserialize)]
         struct Params {
@@ -133,12 +127,7 @@ fn default_impl(input: &ItemFn, args: &MacroArgs) -> PartialError<proc_macro2::T
 
             #(#params_state_fields)*
 
-            Ok(std::boxed::Box::new(async move {
-                let result = #function_name (#(#params_call_fields),*) #awaitable;
-                ::jsonrpc_rs::server::JsonRpcResponseSingle::new(
-                    ::jsonrpc_rs::server::JsonRpcResult::Ok(::std::boxed::Box::new(result))
-                ).into()
-            }))
+            Ok(#dispatch)
         }
     };
 
@@ -187,8 +176,6 @@ fn flattened_impl(input: &ItemFn, args: &MacroArgs) -> PartialError<proc_macro2:
         }
     }
 
-    let function_name = &input.sig.ident;
-
     let single_type = match params_struct_fields {
         Some(param) => {
             let ty = &param.ty;
@@ -203,13 +190,8 @@ fn flattened_impl(input: &ItemFn, args: &MacroArgs) -> PartialError<proc_macro2:
         }
     };
 
-    let awaitable = if input.sig.asyncness.is_some() {
-        quote! { .await }
-    } else {
-        quote! {}
-    };
-
     // ToDo: Create diverging branches for `Result`
+    let dispatch = function_dispatch(input, &params_call_fields);
     let result = quote! {
         #[allow(dead_code)]
         fn jsonrpc_dispatch<'server, 'request>(
@@ -220,12 +202,7 @@ fn flattened_impl(input: &ItemFn, args: &MacroArgs) -> PartialError<proc_macro2:
 
             #(#params_state_fields)*
 
-            Ok(std::boxed::Box::new(async move {
-                let result = #function_name (#(#params_call_fields),*) #awaitable;
-                ::jsonrpc_rs::server::JsonRpcResponseSingle::new(
-                    ::jsonrpc_rs::server::JsonRpcResult::Ok(::std::boxed::Box::new(result))
-                ).into()
-            }))
+            Ok(#dispatch)
         }
     };
 
@@ -278,5 +255,49 @@ fn generate_state_code(
     PartialError {
         result: (state_field, call_field),
         errors,
+    }
+}
+
+fn function_dispatch(
+    input: &ItemFn,
+    params: &[proc_macro2::TokenStream],
+) -> proc_macro2::TokenStream {
+    let awaitable = if input.sig.asyncness.is_some() {
+        quote! { .await }
+    } else {
+        quote! {}
+    };
+
+    let function_name = &input.sig.ident;
+
+    let result = match &input.sig.output {
+        ReturnType::Type(_, ty) if is_result_type(ty) => quote! {
+            match result {
+                Ok(ok) => ::jsonrpc_rs::server::JsonRpcResult::Ok(::std::boxed::Box::new(ok)),
+                Err(err) => err.into(),
+            }
+        },
+        _ => quote! {::jsonrpc_rs::server::JsonRpcResult::Ok(::std::boxed::Box::new(result))},
+    };
+
+    quote! {
+        ::std::boxed::Box::new(async move {
+            let result = #function_name (#(#params),*) #awaitable;
+            ::jsonrpc_rs::server::JsonRpcResponseSingle::new(
+                #result
+            ).into()
+        })
+    }
+}
+
+fn is_result_type(ty: &Type) -> bool {
+    match ty {
+        Type::Path(path) => {
+            let Some(last) = path.path.segments.last() else {
+                return false;
+            };
+            last.ident.to_string() == "Result"
+        }
+        _ => false,
     }
 }
