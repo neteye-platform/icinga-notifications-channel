@@ -41,6 +41,12 @@ fn echo_session() {
         .collect();
     let by_id = |id: u64| lines.iter().find(|l| l["id"] == id).unwrap();
     assert_eq!(by_id(1)["result"]["name"], "Echo");
+    let prefix = &by_id(1)["result"]["config_attrs"][0];
+    assert_eq!(
+        prefix["label"],
+        json!({"en_US": "Prefix", "de_DE": "Präfix"})
+    );
+    assert_eq!(prefix["default"], "echo");
     assert_eq!(by_id(2)["result"], Value::Null);
     assert_eq!(by_id(3)["result"]["details"][0]["value"], "p: hello");
     let log = lines

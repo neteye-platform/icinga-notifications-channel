@@ -2,8 +2,8 @@
 use std::sync::Arc;
 
 use icinga_notifications_channel::{
-    channel::{Channel, ChannelConfig},
-    config::{ConfigOption, ConfigType, Localized},
+    ChannelConfig,
+    channel::Channel,
     delivery::{DeliveryDetail, DeliveryResult},
     error::ChannelError,
     info::Info,
@@ -12,7 +12,9 @@ use icinga_notifications_channel::{
 };
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+/// Labels and help texts live in `examples/echo_locales/<locale>.toml`.
+#[derive(Deserialize, ChannelConfig)]
+#[config(locales = "examples/echo_locales")]
 struct Config {
     #[serde(default = "default_prefix")]
     prefix: String,
@@ -22,12 +24,15 @@ fn default_prefix() -> String {
     "echo".into()
 }
 
-impl ChannelConfig for Config {
-    fn config_attrs() -> Vec<ConfigOption> {
-        vec![
-            ConfigOption::new("prefix", ConfigType::String, Localized::en_us("Prefix"))
-                .default(default_prefix()),
-        ]
+#[cfg(test)]
+mod tests {
+    use icinga_notifications_channel::channel::assert_complete_locale;
+
+    use super::Config;
+
+    #[test]
+    fn german_is_complete() {
+        assert_complete_locale::<Config>("de_DE");
     }
 }
 

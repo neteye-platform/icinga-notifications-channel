@@ -1,0 +1,3 @@
+[prefix]
+label = "Prefix"
+help = "Text put in front of every echoed summary."

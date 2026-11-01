@@ -1,0 +1,3 @@
+[prefix]
+label = "Präfix"
+help = "Text, der jeder wiederholten Zusammenfassung vorangestellt wird."
