@@ -2,3 +2,4 @@
 //! on top of `jsonrpc-rs`.
 
 pub mod config;
+pub mod info;
