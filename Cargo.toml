@@ -5,6 +5,10 @@ edition = "2024"
 
 [dependencies]
 erased-serde = "0.4.8"
+futures-util = "0.3.31"
 monostate = "1.0.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["raw_value"] }
+
+[dev-dependencies]
+tokio = { version = "1.48.0", features = ["macros", "rt"]}
