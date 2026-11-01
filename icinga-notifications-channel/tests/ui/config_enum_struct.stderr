@@ -1,0 +1,5 @@
+error: ConfigEnum can only be derived for enums
+ --> tests/ui/config_enum_struct.rs:4:8
+  |
+4 | struct Mode;
+  |        ^^^^

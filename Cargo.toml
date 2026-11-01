@@ -1,4 +1,4 @@
 [workspace]
 
 resolver = "3"
-members = ["jsonrpc", "jsonrpc-macros", "icinga-notifications-channel"]
+members = ["jsonrpc", "jsonrpc-macros", "icinga-notifications-channel", "icinga-notifications-channel-macros"]

@@ -15,3 +15,6 @@ mod methods;
 mod output;
 
 pub use run::{RunOptions, run, run_with, run_with_subscriber};
+
+#[cfg(feature = "derive")]
+pub use icinga_notifications_channel_macros::ConfigEnum;

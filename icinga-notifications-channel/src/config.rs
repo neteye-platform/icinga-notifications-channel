@@ -298,6 +298,15 @@ impl ConfigOption {
     }
 }
 
+/// An enum whose variants are the choices of a select option.
+///
+/// Derive it with `#[derive(ConfigEnum)]`; the names follow serde's
+/// `rename` and `rename_all`.
+pub trait ConfigEnum {
+    /// The serialized names of all variants, in declaration order.
+    const VARIANTS: &'static [&'static str];
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
