@@ -20,13 +20,14 @@ pub struct JsonRpcRequest<'request> {
     jsonrpc: MustBe!("2.0"),
     method: String,
     #[serde(borrow)]
-    params: &'request RawValue,
+    params: Option<&'request RawValue>,
     id: Option<Value>,
 }
 
 impl JsonRpcRequest<'_> {
     pub fn param_str(&self) -> &str {
-        self.params.get()
+        // If no params are given, default to an empty object
+        self.params.map(|r| r.get()).unwrap_or("{}")
     }
 
     pub fn id(&self) -> Option<&Value> {
@@ -48,20 +49,33 @@ pub enum JsonRpcResult {
 }
 
 #[derive(Serialize)]
-pub struct JsonRpcResponse {
+pub struct JsonRpcResponseSingle {
     jsonrpc: MustBe!("2.0"),
     #[serde(flatten)]
     result: JsonRpcResult,
     id: Value,
 }
 
-impl JsonRpcResponse {
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum JsonRpcResponse {
+    Single(JsonRpcResponseSingle),
+    Bulk(Vec<JsonRpcResponseSingle>),
+}
+
+impl JsonRpcResponseSingle {
     pub fn new(result: JsonRpcResult) -> Self {
         Self {
             jsonrpc: MustBe!("2.0"),
             result,
             id: Value::Null,
         }
+    }
+}
+
+impl From<JsonRpcResponseSingle> for JsonRpcResponse {
+    fn from(value: JsonRpcResponseSingle) -> Self {
+        JsonRpcResponse::Single(value)
     }
 }
 
@@ -104,7 +118,7 @@ impl JsonRpcErrorCode {
 
 pub type JsonRpcMethodCall = Box<dyn Future<Output = JsonRpcResponse> + 'static + Send>;
 pub type JsonRpcMethod =
-    &'static dyn Fn(&JsonRpcRequest<'_>) -> Result<JsonRpcMethodCall, JsonRpcResponse>;
+    &'static dyn Fn(&JsonRpcRequest<'_>) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle>;
 
 pub struct ServerBuilder {
     registered_methods: HashMap<String, JsonRpcMethod>,
@@ -169,19 +183,108 @@ impl Future for JsonRpcMethodCallInner {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         let fut = pin!(&mut self.fut);
-        let mut res = ready!(fut.poll(cx));
-        match self.id.as_mut() {
-            Some(id) => {
-                res.id = std::mem::take(id);
-                Poll::Ready(Some(res))
+        match ready!(fut.poll(cx)) {
+            JsonRpcResponse::Single(mut single_response) => {
+                let Some(id) = std::mem::take(&mut self.id) else {
+                    return Poll::Ready(None);
+                };
+                single_response.id = id;
+                Poll::Ready(Some(JsonRpcResponse::Single(single_response)))
             }
-            None => Poll::Ready(None),
+            JsonRpcResponse::Bulk(bulk) => {
+                if bulk.is_empty() {
+                    return Poll::Ready(None);
+                }
+                Poll::Ready(Some(JsonRpcResponse::Bulk(bulk)))
+            }
         }
     }
 }
 
 impl<Source> Dispatcher<Source> {
-    fn dispatch(&self, req: &JsonRpcRequest) -> Result<JsonRpcMethodCall, JsonRpcResponse> {
+    fn process_single(
+        &self,
+        next: &str,
+    ) -> Option<Result<JsonRpcMethodCallInner, JsonRpcResponseSingle>> {
+        let request = match serde_json::from_str::<JsonRpcRequest>(&next) {
+            Ok(request) => request,
+            Err(error) => return Some(Err(parse_error(error))),
+        };
+
+        match self.dispatch(&request) {
+            Ok(fut) => Some(Ok(JsonRpcMethodCallInner {
+                fut: Box::into_pin(fut),
+                id: request.id,
+            })),
+            Err(mut err) => {
+                if let Some(id) = request.id {
+                    err.id = id;
+                    Some(Err(err))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn process_batch(&self, next: &str) -> Result<JsonRpcMethodCallInner, JsonRpcResponseSingle> {
+        let requests = match serde_json::from_str::<Vec<&RawValue>>(next) {
+            Ok(request) => request,
+            Err(error) => return Err(parse_error(error)),
+        };
+
+        if requests.is_empty() {
+            return Err(JsonRpcResponseSingle::new(JsonRpcResult::Err {
+                code: JsonRpcErrorCode::invalid_request(),
+                message: "Invalid Request".to_owned(),
+                data: None,
+            }));
+        }
+
+        let mut calls = Vec::with_capacity(requests.len());
+        for req in requests {
+            let request = match serde_json::from_str::<JsonRpcRequest>(&req.get()) {
+                Ok(request) => request,
+                Err(error) => {
+                    calls.push(JsonRpcMethodCallInner {
+                        id: Some(Value::Null),
+                        fut: Box::pin(async { JsonRpcResponse::Single(parse_error(error)) }),
+                    });
+                    continue;
+                }
+            };
+
+            let call_inner = match self.dispatch(&request) {
+                Ok(call) => JsonRpcMethodCallInner {
+                    id: request.id,
+                    fut: Box::into_pin(call),
+                },
+                Err(error) => JsonRpcMethodCallInner {
+                    id: request.id,
+                    fut: Box::pin(async { JsonRpcResponse::Single(error) }),
+                },
+            };
+
+            calls.push(call_inner);
+        }
+
+        let future = Box::pin(async move {
+            let mut results = vec![];
+            for next in calls {
+                if let Some(JsonRpcResponse::Single(response)) = next.await {
+                    results.push(response);
+                }
+            }
+            JsonRpcResponse::Bulk(results)
+        });
+
+        Ok(JsonRpcMethodCallInner {
+            id: None,
+            fut: future,
+        })
+    }
+
+    fn dispatch(&self, req: &JsonRpcRequest) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle> {
         let Some(method_call) = self.registered_methods.get(&req.method) else {
             return Err(method_not_found(req.method.clone()));
         };
@@ -191,7 +294,7 @@ impl<Source> Dispatcher<Source> {
 }
 
 impl<Source: Stream<Item = String> + Unpin> Stream for Dispatcher<Source> {
-    type Item = Result<JsonRpcMethodCallInner, JsonRpcResponse>;
+    type Item = Result<JsonRpcMethodCallInner, JsonRpcResponseSingle>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -203,21 +306,14 @@ impl<Source: Stream<Item = String> + Unpin> Stream for Dispatcher<Source> {
         };
 
         // ToDo: Consider using serde_path_to_error here.
-        let request = match serde_json::from_str::<JsonRpcRequest>(&next) {
-            Ok(request) => request,
-            Err(error) => return Poll::Ready(Some(Err(parse_error(error)))),
-        };
-
-        match self.dispatch(&request) {
-            Ok(fut) => Poll::Ready(Some(Ok(JsonRpcMethodCallInner {
-                fut: Box::into_pin(fut),
-                id: request.id,
-            }))),
-            Err(mut err) => {
-                if let Some(id) = request.id {
-                    err.id = id;
-                    Poll::Ready(Some(Err(err)))
-                } else {
+        if next.starts_with("[") {
+            Poll::Ready(Some(self.process_batch(&next)))
+        } else {
+            match self.process_single(&next) {
+                Some(single) => Poll::Ready(Some(single)),
+                None => {
+                    // There was an error in a notification, immediately poll again to continue
+                    cx.waker().clone().wake();
                     Poll::Pending
                 }
             }
@@ -263,6 +359,7 @@ impl<Source: Stream<Item = String> + Unpin> Stream for Server<Source> {
         }
 
         let fut_stream = pin!(&mut self.source);
+
         match ready!(fut_stream.poll_next(cx)) {
             Some(Ok(mut next)) => {
                 // Allow the user to add custom behaviour here, e.g. spawning the future as a task for
@@ -274,7 +371,7 @@ impl<Source: Stream<Item = String> + Unpin> Stream for Server<Source> {
                 // Make sure to call poll_next on the running futures
             }
             Some(Err(response)) => {
-                return Poll::Ready(Some(response));
+                return Poll::Ready(Some(JsonRpcResponse::Single(response)));
             }
             None => {
                 // Make sure all started futures run to their end to avoid cancel issues.
@@ -298,25 +395,40 @@ impl<Source: Stream<Item = String> + Unpin> Stream for Server<Source> {
     }
 }
 
-pub fn parse_params<T: DeserializeOwned>(req: &JsonRpcRequest) -> Result<T, JsonRpcResponse> {
+pub fn parse_params<T: DeserializeOwned>(req: &JsonRpcRequest) -> Result<T, JsonRpcResponseSingle> {
     // ToDo: Consider using serde_path_to_error here.
-    serde_json::from_str(req.params.get()).map_err(parse_error)
+    serde_json::from_str(req.param_str()).map_err(parse_error)
 }
 
-fn parse_error(error: serde_json::Error) -> JsonRpcResponse {
-    JsonRpcResponse {
-        jsonrpc: MustBe!("2.0"),
-        result: JsonRpcResult::Err {
-            code: JsonRpcErrorCode::parse_error(),
-            message: error.to_string(),
-            data: None,
+fn parse_error(error: serde_json::Error) -> JsonRpcResponseSingle {
+    match error.classify() {
+        serde_json::error::Category::Data => JsonRpcResponseSingle {
+            jsonrpc: MustBe!("2.0"),
+            result: JsonRpcResult::Err {
+                code: JsonRpcErrorCode::invalid_request(),
+                message: "Invalid Request".to_string(),
+                data: Some(Box::new(json!({
+                    "error": error.to_string()
+                }))),
+            },
+            id: Value::Null,
         },
-        id: Value::Null,
+        _ => JsonRpcResponseSingle {
+            jsonrpc: MustBe!("2.0"),
+            result: JsonRpcResult::Err {
+                code: JsonRpcErrorCode::parse_error(),
+                message: "Parse error".to_string(),
+                data: Some(Box::new(json!({
+                    "error": error.to_string()
+                }))),
+            },
+            id: Value::Null,
+        },
     }
 }
 
-fn method_not_found(method: String) -> JsonRpcResponse {
-    JsonRpcResponse {
+fn method_not_found(method: String) -> JsonRpcResponseSingle {
+    JsonRpcResponseSingle {
         jsonrpc: MustBe!("2.0"),
         result: JsonRpcResult::Err {
             code: JsonRpcErrorCode::method_not_found(),
@@ -335,7 +447,7 @@ mod tests {
     use serde_json::json;
 
     use crate::server::{
-        JsonRpcErrorCode, JsonRpcMethodCall, JsonRpcRequest, JsonRpcResponse, JsonRpcResult,
+        JsonRpcErrorCode, JsonRpcMethodCall, JsonRpcRequest, JsonRpcResponseSingle, JsonRpcResult,
         ServerBuilder, parse_params,
     };
 
@@ -345,7 +457,7 @@ mod tests {
 
     fn rpc_test_method_subtract_dispatch<'a>(
         request: &JsonRpcRequest<'a>,
-    ) -> Result<JsonRpcMethodCall, JsonRpcResponse> {
+    ) -> Result<JsonRpcMethodCall, JsonRpcResponseSingle> {
         #[derive(Deserialize)]
         struct Params {
             lhs: i32,
@@ -353,10 +465,9 @@ mod tests {
         }
 
         let params: Params = parse_params(&request)?;
-        // ToDo: Find a better way to handle Notifications
         Ok(Box::new(async move {
             let result = rpc_test_method_subtract(params.lhs, params.rhs).await;
-            JsonRpcResponse::new(JsonRpcResult::Ok(Box::new(result)))
+            JsonRpcResponseSingle::new(JsonRpcResult::Ok(Box::new(result))).into()
         }))
     }
 
@@ -366,12 +477,12 @@ mod tests {
             r#"{"jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1}"#;
         let request: JsonRpcRequest = serde_json::from_str(request_str).unwrap();
         assert_eq!(request.method.as_str(), "subtract");
-        assert_eq!(request.params.get(), "[42, 23]")
+        assert_eq!(request.param_str(), "[42, 23]")
     }
 
     #[test]
     pub fn should_serialize_result() {
-        let response = JsonRpcResponse {
+        let response = JsonRpcResponseSingle {
             jsonrpc: MustBe!("2.0"),
             result: JsonRpcResult::Ok(Box::new(19)),
             id: json!(1),
@@ -386,7 +497,7 @@ mod tests {
 
     #[test]
     pub fn should_serialize_error() {
-        let error_response = JsonRpcResponse {
+        let error_response = JsonRpcResponseSingle {
             jsonrpc: MustBe!("2.0"),
             result: JsonRpcResult::Err {
                 code: JsonRpcErrorCode::method_not_found(),
