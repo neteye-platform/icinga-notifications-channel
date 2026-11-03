@@ -32,7 +32,7 @@ steps; its tests do not need any later step.
 ## Crates
 
 | Crate | Contents |
-|---|---|
+| --- | --- |
 | `icinga-notifications-channel` | Runtime, traits, protocol types, `Secret` |
 | `icinga-notifications-channel-macros` | `ChannelConfig` and `ConfigEnum` derives |
 
@@ -43,11 +43,13 @@ The runtime re-exports the derives behind a default-on `derive` feature.
 ## Phase 1: Protocol types (no IO)
 
 ### 1. Crate skeleton
+
 - Add `icinga-notifications-channel` to the workspace, depending on `jsonrpc-rs`,
   `serde`, `serde_json`, `tokio`, `tracing`.
 - **Test:** `cargo build -p icinga-notifications-channel`.
 
 ### 2. `Localized` and `ConfigType`
+
 - `Localized`: a `BTreeMap<Locale, String>` that can only be built with an `en_US`
   entry. `Locale` validates `language_REGION`.
 - `ConfigType`: `String, Number, Bool, Text, Option, Options, Secret`, serialized as
@@ -56,6 +58,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   is rejected with a message naming it; serialization matches the Go names.
 
 ### 3. `ConfigOption` builder
+
 - `ConfigOption::new(name, ConfigType, Localized)` with `.help()`, `.default()`,
   `.required()`, `.min()`, `.max()`, `.options()`, `.child()`.
 - `min`/`max` only for `Number`, `options` only for `Option`/`Options`; children
@@ -65,11 +68,13 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   example and compare as `serde_json::Value`, including `"min": null, "max": null`.
 
 ### 4. `Info` and `GetInfo` response
+
 - `Info { name, version, author }` and a private `GetInfoResponse` that adds
   `supported_request_versions: [1]` and `config_attrs`.
 - **Test (unit):** the doc's `GetInfo` response example round-trips.
 
 ### 5. Notification request types
+
 - `NotificationRequest { version, payload: Box<RawValue> }`.
 - `NotificationV1`, `Contact`, `Address`, `Object`, `Incident`, `Event`, `Severity`,
   with `incident: Option<Incident>` and `state: Option<State>`.
@@ -79,6 +84,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   `"incident": null` and no `state` deserializes.
 
 ### 6. State
+
 - `StateKey` (opaque, no public constructor), `State { key, value }`.
 - `State::update(value) -> Result<StateUpdate, ChannelError>`: value length 1..=4096
   characters, checked once here.
@@ -86,6 +92,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   the allowed range; 1 and 4096 succeed; the key in `StateUpdate` is the received key.
 
 ### 7. Delivery result
+
 - `DeliveryDetail` enum: `Number, Boolean, Severity, Text, Url { url: HttpUrl,
   anchor_text }, Datetime`, serialized as `{type, label, value, anchor_text?}`.
 - `HttpUrl` accepts only absolute `http`/`https` URLs.
@@ -94,6 +101,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   `ftp://x` and `/relative` are rejected by `HttpUrl`.
 
 ### 8. `ChannelError`
+
 - `ChannelError::new(message)` (`-32000`), `ChannelError::with_code`, and
   `From<ChannelError> for JsonRpcResult`.
 - **Test (unit):** conversion produces the expected error object.
@@ -101,6 +109,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
 ## Phase 2: Runtime
 
 ### 9. `Channel` and `ChannelConfig` traits
+
 - `ChannelConfig: DeserializeOwned + Send + Sync + 'static { fn config_attrs() ->
   Vec<ConfigOption>; }`.
 - `Channel { type Config: ChannelConfig; fn info(&self) -> Info; fn validate(...);
@@ -109,6 +118,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   yet.
 
 ### 10. Method handlers on `jsonrpc-rs`
+
 - Generic dispatch functions `get_info::<C>`, `set_config::<C>`,
   `send_notification::<C>` registered manually as `JsonRpcMethod`.
 - `SetConfig`: deserialize, `validate`, swap the `Arc`; the old config stays on error.
@@ -126,6 +136,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   - A panicking `send_notification` yields `-32603`.
 
 ### 11. Shared writer
+
 - Private `Outgoing { Response, Log }` and a writer task that drains an unbounded
   mpsc receiver into `FramedWrite<W, LinesCodec>`.
 - The server sink is `tx.clone().with(...)`.
@@ -135,6 +146,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   delivering (verifies the open question about `mpsc::Sender::poll_close`).
 
 ### 12. `channel::Log` tracing layer
+
 - `ChannelLogLayer` implementing `tracing_subscriber::Layer`: maps `TRACE`/`DEBUG` to
   `debug`, `INFO`, `WARN`, `ERROR`; the `message` field to `message`; other fields to
   the flat `fields` array; sends with `unbounded_send`.
@@ -144,12 +156,14 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   without an `id`.
 
 ### 13. `run_with` over any reader/writer
+
 - `run_with(channel, read, write, RunOptions)`: wires steps 10–12 together and
   stops when `read` reaches EOF.
 - **Test (integration):** a full session over `tokio::io::duplex`: `GetInfo`,
   `SetConfig`, `SendNotification` and one log line, then EOF; `run_with` returns `Ok`.
 
 ### 14. Shutdown and `run`
+
 - A shutdown future (SIGINT and, on Unix, SIGTERM) applied with `take_until`; drain
   bounded by `drain_timeout`.
 - `run(channel)` and `run_with_subscriber(channel, |layer| subscriber)` on
@@ -163,6 +177,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   exit. Real signals are not exercised in CI.
 
 ### 15. Example channel
+
 - `examples/echo.rs`: hand-written `ChannelConfig`, logs and returns a text detail.
 - **Test (integration):** spawn the example binary, pipe a session into stdin,
   compare stdout lines.
@@ -170,6 +185,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
 ## Phase 3: Derive macros
 
 ### 16. Macro crate skeleton and `ConfigEnum`
+
 - `icinga-notifications-channel-macros` with `syn`, `quote`, `darling`.
 - `#[derive(ConfigEnum)]` on unit enums: `fn variants() -> &'static [&'static str]`
   using serde names (`rename`, `rename_all`).
@@ -178,6 +194,7 @@ The runtime re-exports the derives behind a default-on `derive` feature.
 - **Test (compile-fail, `trybuild`):** non-unit variants are rejected.
 
 ### 17. `ChannelConfig` derive without translations
+
 - Field to `ConfigType` mapping (`String`, numbers, `bool`, `Secret`, `ConfigEnum`,
   `Vec`/`BTreeSet` of `ConfigEnum`, `Option<T>`), `#[config(text)]`,
   `#[config(min, max)]`.
@@ -190,12 +207,14 @@ The runtime re-exports the derives behind a default-on `derive` feature.
   unsupported field type; each error points at the right span.
 
 ### 18. Children
+
 - `#[config(parent = "field", when = [...])]`, checked against the parent's
   `ConfigEnum` variants or `true`/`false`; a child cannot be a parent.
 - **Test (unit):** the child appears under its parent with `parent_values`.
 - **Test (compile-fail):** unknown parent, invalid `when` value, nested child.
 
 ### 19. Locale files
+
 - `#[config(locales = "dir")]` relative to `CARGO_MANIFEST_DIR`; parse every
   `*.toml`, file stem is the locale; embed with `include_str!` so edits trigger
   rebuilds.
@@ -209,11 +228,13 @@ The runtime re-exports the derives behind a default-on `derive` feature.
 - **Test:** touching a locale file rebuilds (checked manually once, documented).
 
 ### 20. `assert_complete_locale`
+
 - `assert_complete_locale::<C>("de_DE")` for use in `cargo test`, listing every
   field and option missing a label or help.
 - **Test (unit):** passes for a complete locale, fails with the full list otherwise.
 
 ### 21. Example and docs
+
 - Switch `examples/echo.rs` to the derive with a `locales/` directory.
 - README: quick start, translation file format, logging, shutdown behaviour,
   "never write to stdout".
