@@ -7,7 +7,7 @@ configuration form, logging and shutdown, so you only write the delivery.
 
 ## Quick start
 
-```rust,ignore
+```rust
 use std::sync::Arc;
 
 use icinga_notifications_channel::{

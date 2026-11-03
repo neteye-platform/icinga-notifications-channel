@@ -14,8 +14,8 @@ default = ["derive"]
 derive = ["dep:icinga-notifications-channel-macros"]
 
 [dependencies]
-jsonrpc-rs = { path = "crates/jsonrpc" }
-icinga-notifications-channel-macros = { path = "crates/icinga-notifications-channel-macros", optional = true }
+jsonrpc-rs = { path = "crates/jsonrpc", version = "0.2.0" }
+icinga-notifications-channel-macros = { path = "crates/icinga-notifications-channel-macros", optional = true, version = "0.1.0" }
 async-lock = { version = "3.4.1", default-features = false }
 futures-util = { version = "0.3.31", features = ["sink"] }
 futures-channel = { version = "0.3.31", features = ["sink"] }
