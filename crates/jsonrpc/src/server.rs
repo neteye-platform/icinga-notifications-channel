@@ -258,6 +258,12 @@ pub struct ServerBuilder {
     max_parallel_requests: usize,
 }
 
+impl Default for ServerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ServerBuilder {
     /// Creates a new empty builder with:
     /// * No registered methods
@@ -607,7 +613,7 @@ impl ServerState {
                 return Some(lock);
             }
         }
-        return None;
+        None
     }
 }
 
@@ -712,7 +718,7 @@ mod tests {
             rhs: i32,
         }
 
-        let params: Params = parse_params(&request)?;
+        let params: Params = parse_params(request)?;
         Ok(Box::new(async move {
             let result = rpc_test_method_subtract(params.lhs, params.rhs).await;
             JsonRpcResponseSingle::new(JsonRpcResult::Ok(Box::new(result))).into()
