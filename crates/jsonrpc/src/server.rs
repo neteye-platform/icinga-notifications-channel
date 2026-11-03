@@ -249,7 +249,7 @@ impl JsonRpcNamedMethod {
 /// * Finalize to a running [`Server`] with [`ServerBuilder::build`]
 ///
 /// The builder is `Clone` to support patterns where partial configurations
-/// are reused, or the config is re-used for several connections.
+/// are reused, or the config is reused for several connections.
 #[derive(Clone)]
 pub struct ServerBuilder {
     registered_methods: HashMap<String, JsonRpcMethod>,
