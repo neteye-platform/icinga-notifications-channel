@@ -1,7 +1,10 @@
 [package]
-name = "jsonrpc_rs-macros"
+name = "jsonrpc-rs-macros"
+description = "Procedural macros for jsonrpc-rs (the #[jsonrpc] attribute)"
 version = "0.2.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
 
 [lib]
 proc-macro = true
