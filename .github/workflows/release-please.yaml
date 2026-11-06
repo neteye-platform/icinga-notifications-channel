@@ -1,0 +1,84 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions: {}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    # release-please authenticates with the GitHub App token below.
+    permissions: {}
+    outputs:
+      releases_created: ${{ steps.rp.outputs.releases_created }}
+      paths_released: ${{ steps.rp.outputs.paths_released }}
+    steps:
+      # NetEye Steward GitHub App, as in the other neteye-platform repos. An App
+      # token is needed so that the release PR triggers the
+      # `release-please-publish-dry-run` workflow (GITHUB_TOKEN PRs don't).
+      # `issues: write` is needed for the release PR labels.
+      - name: Generate GitHub App token
+        id: generate-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.NETEYE_APP_ID }}
+          private-key: ${{ secrets.NETEYE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - id: rp
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ steps.generate-token.outputs.token }}
+
+  # On merge of the release PR, release-please creates a `<crate>/<version>` tag
+  # and GitHub Release per released crate. Publish those crates; cargo orders
+  # them by dependency.
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    # Trusted Publisher environment on crates.io; restricted to `main`.
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - id: auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+
+      - name: Publish released crates
+        # `bash` runs with `-eo pipefail`, so a failing `cargo metadata` stops the job.
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          PATHS_RELEASED: ${{ needs.release-please.outputs.paths_released }}
+        run: |
+          # Map released package paths to `--package=<name>` arguments.
+          out=$(cargo metadata --no-deps --format-version 1 | jq -r \
+            --arg root "$PWD" --argjson paths "$PATHS_RELEASED" '
+              .packages[]
+              | (.manifest_path | ltrimstr($root + "/") | rtrimstr("Cargo.toml") | rtrimstr("/")
+                 | if . == "" then "." else . end) as $p
+              | select($paths | index($p))
+              | "--package=\(.name)"')
+          # Without `--package`, cargo would publish the root crate.
+          if [ -z "$out" ]; then
+            echo "::error::No workspace package matches paths_released: $PATHS_RELEASED"
+            exit 1
+          fi
+          mapfile -t args <<< "$out"
+          cargo publish --locked "${args[@]}"

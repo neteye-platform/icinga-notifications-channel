@@ -1,0 +1,6 @@
+{
+  ".": "0.1.0",
+  "crates/icinga-notifications-channel-macros": "0.1.0",
+  "crates/jsonrpc": "0.2.0",
+  "crates/jsonrpc-macros": "0.2.0"
+}

@@ -1,0 +1,46 @@
+name: Release PR Publish Dry Run
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  publish-dry-run:
+    if: startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      # Dry-run publish of every crate bumped in the release PR, as one
+      # multi-package publish: dependents are verified against the bumped,
+      # not-yet-published versions of their dependencies. No credentials needed.
+      - name: Dry-run publish bumped crates
+        # `bash` runs with `-eo pipefail`, so a failing `git diff` or
+        # `cargo metadata` fails the check instead of reporting no changes.
+        shell: bash
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          # Map changed package manifests to `--package=<name>` arguments.
+          changed=$(git diff --name-only "$BASE"...HEAD -- '*Cargo.toml' | jq -R . | jq -s .)
+          out=$(cargo metadata --no-deps --format-version 1 | jq -r \
+            --arg root "$PWD" --argjson changed "$changed" '
+              .packages[]
+              | select((.manifest_path | ltrimstr($root + "/")) as $m | $changed | index($m))
+              | "--package=\(.name)"')
+          if [ -z "$out" ]; then
+            echo "No crate versions changed."
+            exit 0
+          fi
+          mapfile -t args <<< "$out"
+          cargo publish --dry-run --locked "${args[@]}"

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "rust",
+  "bump-minor-pre-major": true,
+  "separate-pull-requests": false,
+  "include-component-in-tag": true,
+  "include-v-in-tag": false,
+  "tag-separator": "/",
+  "plugins": ["cargo-workspace"],
+  "packages": {
+    ".": { "exclude-paths": ["crates"] },
+    "crates/icinga-notifications-channel-macros": {},
+    "crates/jsonrpc": {},
+    "crates/jsonrpc-macros": {}
+  }
+}

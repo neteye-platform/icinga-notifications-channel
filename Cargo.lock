@@ -351,7 +351,7 @@ dependencies = [
  "async-lock",
  "erased-serde",
  "futures-util",
- "jsonrpc_rs-macros",
+ "jsonrpc-rs-macros",
  "monostate",
  "serde",
  "serde_json",
@@ -361,7 +361,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "jsonrpc_rs-macros"
+name = "jsonrpc-rs-macros"
 version = "0.2.0"
 dependencies = [
  "darling",

@@ -2,10 +2,16 @@
 members = ["crates/*"]
 resolver = "3"
 
+[workspace.package]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/neteye-platform/icinga-notifications-channel"
+
 [package]
 name = "icinga-notifications-channel"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
 description = "Write Icinga Notifications channel plugins on top of jsonrpc-rs"
 
 [features]
