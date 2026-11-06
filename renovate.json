@@ -1,4 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>neteye-platform/repo-commons"]
+  "extends": ["github>neteye-platform/repo-commons"],
+  "packageRules": [
+    {
+      "description": "Published library crates: keep SemVer ranges in Cargo.toml instead of pinning; Cargo.lock pins the tested versions",
+      "matchManagers": ["cargo"],
+      "rangeStrategy": "update-lockfile"
+    }
+  ]
 }
