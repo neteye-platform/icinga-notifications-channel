@@ -1,0 +1,5 @@
+error: ChannelConfig requires `#[config(locales = "dir")]`, the directory of the translation files
+ --> tests/ui/locales_missing_attr.rs:5:8
+  |
+5 | struct C {
+  |        ^

@@ -1,0 +1,6 @@
+error: `parent` requires `when = [...]`
+  --> tests/ui/channel_config_parent_without_when.rs:13:5
+   |
+13 | /     #[config(parent = "m")]
+14 | |     a: Option<String>,
+   | |_____________________^

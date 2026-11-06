@@ -1,0 +1,5 @@
+error: ConfigEnum only supports unit variants
+ --> tests/ui/config_enum_non_unit.rs:6:5
+  |
+6 |     Data(String),
+  |     ^^^^^^^^^^^^

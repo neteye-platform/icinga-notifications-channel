@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: true and false require a bool parent
+  --> tests/ui/channel_config_bool_when_on_select.rs:13:36
+   |
+13 |     #[config(parent = "m", when = [true])]
+   |                                    ^^^^ evaluation of `<C as icinga_notifications_channel::channel::ChannelConfig>::config_attrs::_` failed here

@@ -1,0 +1,5 @@
+error: ChannelConfig does not support flatten
+ --> tests/ui/channel_config_flatten.rs:7:13
+  |
+7 |     #[serde(flatten)]
+  |             ^^^^^^^

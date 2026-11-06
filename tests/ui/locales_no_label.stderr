@@ -1,0 +1,5 @@
+error: ../../../../tests/locales/bad_no_label/en_US.toml: option `a` has no `label`
+ --> tests/ui/locales_no_label.rs:5:20
+  |
+5 | #[config(locales = "../../../../tests/locales/bad_no_label")]
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
